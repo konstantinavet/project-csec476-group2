@@ -37,6 +37,7 @@ The sample as delivered was a 295 KiB file named `group2.pdf`. Detect It Easy
 (DIE) v3.10 was used to confirm the file type before any further interaction.
 
 ![DIE identifying group2.pdf as PDF 1.7 with binary data](images/pdf_die.png)
+
 *Figure 1: Detect It Easy identifies `group2.pdf` as `PDF(1.7)[with binary
 data]`. The "with binary data" tag is a strong hint that the PDF carries
 a non-textual payload such as an embedded file or stream.*
