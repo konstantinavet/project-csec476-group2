@@ -163,7 +163,7 @@ SHA-256, which any reader can independently verify by recomputing the hash on
 their own copy of the extracted file. Second, the hash can be searched against
 public threat intelligence databases such as VirusTotal, MalwareBazaar, and
 Hybrid Analysis to determine whether the sample has been previously observed
-in the wild.*
+in the wild.
 
 The complete metadata for the extracted binary is:
 
@@ -198,7 +198,7 @@ of the antivirus engines that contribute to VirusTotal, nor by the community
 comment system. This negative result is itself a finding: whatever this
 sample is, it is either genuinely novel or it has been generated fresh specifically 
 for this deliverable and therefore has no prior fingerprint. Either way, we cannot rely
-on external classification and must identify the family through our own analysis.*
+on external classification and must identify the family through our own analysis.
 
 #### Binary identification with Detect It Easy
 
@@ -305,7 +305,7 @@ rather than a true packer — the bytes in `.glav` are ready-to-execute x64
 instructions, not a decompress-then-run stub. The practical implication
 for reverse engineering is confirmed by the Advanced Static Analysis
 section below: the shellcode in `.glav` can be disassembled directly
-without peeling off any encryption or compression wrapper.*
+without peeling off any encryption or compression wrapper.
 
 #### Import Address Table
 
@@ -454,7 +454,7 @@ references for capa's rules to match on. Paradoxically, capa's failure here
 is itself strong evidence of API hashing: in an ecosystem where 99.9% of
 real-world malware triggers at least a handful of capa rules, a zero-
 capability result is diagnostic of advanced evasion and points the analyst
-toward the manual techniques used in the Advanced Static Analysis section.*
+toward the manual techniques used in the Advanced Static Analysis section.
 
 #### Authenticode signature check
 
@@ -479,7 +479,7 @@ is non-zero), or the binary was post-processed after linking. For a
 Metasploit sample, the second explanation is likely: `msfvenom` takes the
 compiled PE template and patches in the stager shellcode, which invalidates
 any previously-computed checksum. The mismatch is therefore an additional
-structural fingerprint pointing toward an msfvenom-produced binary.*
+structural fingerprint pointing toward an msfvenom-produced binary.
 
 #### Secondary PE survey with rabin2
 
@@ -586,7 +586,7 @@ URI string. The subsequent `xor r9, r9`, stack pushes, and `mov rax,
 0x84a83200` set up the remaining arguments for the next call — the constant
 `0x84A83200` is a bitmask of WinINet request flags including
 `INTERNET_FLAG_SECURE (0x00800000)`, identifying the request as HTTPS rather
-than plain HTTP.*
+than plain HTTP.
 
 This resolved the mystery of the `/DoSaKU…` string. It is not encoded. It
 is not compressed. It is plaintext ASCII data, stored in the middle of the
