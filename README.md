@@ -1,11 +1,13 @@
 # project-csec476-group2
 Malware analysis project including static and dynamic analysis of a real-world sample, with detailed findings, reverse engineering, and network behavior investigation.
 
-# Malware Analysis Report - Group X
+# Malware Analysis Report - Group 2
 
 ## Team Members
-- Name – ID
-- Name – ID
+- Konstantin Avetisian – 405006442
+- Ayush Gowda – 393000595
+- Nikita Astionov – 386004799
+- Youssef Elgayar – 772003595
 
 ## Table of Contents
 - Technical Summary
@@ -65,10 +67,11 @@ on the PDF layer itself.
 ![Detect It Easy identifying group2.pdf as PDF 1.7 with binary data](images/pdf_die.png)
 
 *Figure 1: Detect It Easy identifies `group2.pdf` as a legitimate PDF file
-(format `PDF(1.7)[with binary data]`). Establishing the true file type before
-proceeding is standard practice in static analysis because file extensions can
-be forged; the actual magic bytes at the start of the file (`%PDF-1.7`)
-determine what tools to apply next.*
+(format `PDF(1.7)[with binary data]`).*
+
+Establishing the true file type before proceeding is standard practice in static analysis 
+because file extensions can be forged, the actual magic bytes at the start of the file (`%PDF-1.7`)
+determine what tools to apply next.
 
 #### Triaging the PDF structure
 
@@ -89,9 +92,10 @@ narrowed the threat model considerably.
 *Figure 2: `pdfid.py` parses the PDF and counts abuse-prone keywords. In
 `group2.pdf`, only one such keyword appears: `/EmbeddedFile = 1`. Every
 script-execution and auto-action keyword — `/JavaScript`, `/JS`,
-`/OpenAction`, `/AA`, `/Launch` — is zero. This tells us the PDF contains no
-embedded JavaScript, no auto-execution triggers, and no launch actions. Its
-sole function is to carry a single embedded file as an attachment.*
+`/OpenAction`, `/AA`, `/Launch` — is zero.*
+
+This tells us the PDF contains no embedded JavaScript, no auto-execution triggers, and no launch actions.
+Its sole function is to carry a single embedded file as an attachment.
 
 #### Locating the embedded file reference
 
@@ -151,9 +155,9 @@ procedures were applied.
 
 ![PowerShell Get-FileHash computing SHA-256 of the extracted group2.exe](images/pefile_hash.png)
 
-*Figure 5: SHA-256 of the extracted binary:
-`89DFBFEDA4EC1D4F6D28AB376CC28468F42F98CCC694CD8E9A5033A34C2F7A7B`. The hash
-serves two purposes. First, it is the canonical identifier for the sample —
+*Figure 5: SHA-256 of the extracted binary*
+
+The hash serves two purposes. First, it is the canonical identifier for the sample —
 every subsequent finding in this report is attributable to this specific
 SHA-256, which any reader can independently verify by recomputing the hash on
 their own copy of the extracted file. Second, the hash can be searched against
@@ -187,7 +191,9 @@ is tested and confirmed by the Advanced Static Analysis below.
 ![VirusTotal search returns no matching results for the extracted SHA-256](images/virustotal_nohits.png)
 
 *Figure 6: VirusTotal returns no matching results for the extracted SHA-256
-as of the analysis date. The sample has not been previously observed by any
+as of the analysis date.* 
+
+The sample has not been previously observed by any
 of the antivirus engines that contribute to VirusTotal, nor by the community
 comment system. This negative result is itself a finding: whatever this
 sample is, it is either genuinely novel or it has been generated fresh specifically 
@@ -205,14 +211,15 @@ architecture, and any high-level indicators such as packers or protectors.
 `AMD64`, `GUI`), built with Microsoft Visual C/C++ version 19.36.35207 and
 linked with Microsoft Linker 14.36.35207 (Visual Studio 2022, v17.6). The
 heuristic line `(Heur)Packer: Compressed or packed data [Last section EP]` is
-the most interesting single finding from this step: DIE's packer heuristic
-has flagged that the PE's entry point does not sit in the first section of
-the binary (`.text`) but in the **last** section. Normal MSVC output places
-executable code in `.text`, which is always the first code section. An entry
+the most interesting single finding from this step* 
+
+DIE's packer heuristic has flagged that the PE's entry point does not sit in the first section of
+the binary (`.text`) but in the **last** section. Normal MSVC output places executable code in `.text`,
+which is always the first code section. An entry
 point in a trailing section is diagnostic of either a packer (which decompresses
 the original code at runtime and transfers control to it) or a custom loader
 (which prepares the environment and jumps to embedded shellcode). Combined
-with the small file size, the latter interpretation is more likely.*
+with the small file size, the latter interpretation is more likely.
 
 #### PE structure analysis
 
@@ -223,8 +230,9 @@ inspection.
 
 ![PE-bear tree view showing DOS Header, NT Headers, Section Headers, and five sections ending with .glav containing the entry point](images/pebear_sections.png)
 
-*Figure 8: PE-bear's tree view of `group2.exe`. The section tree shows five
-sections: `.text`, `.rdata`, `.data`, `.pdata`, and `.glav`. The first four
+*Figure 8: PE-bear's tree view of `group2.exe`.*
+
+The section tree shows five sections: `.text`, `.rdata`, `.data`, `.pdata`, and `.glav`. The first four
 are standard outputs of the Microsoft linker for a 64-bit PE (`.text` for
 executable code, `.rdata` for read-only data, `.data` for mutable data, and
 `.pdata` for exception-handling metadata required by the x64 calling
@@ -233,7 +241,7 @@ does not emit sections with this name under any default configuration. The
 entry point annotation `EP = 1A00` further confirms that the binary's
 execution begins inside `.glav` — the last-loaded section. This is the
 structural signature of a hand-crafted PE loader with embedded shellcode,
-not a normal compiled application.*
+not a normal compiled application.
 
 ![CFF Explorer section table showing .glav with virtual size 0x375, characteristics 0xE0000020](images/cff_sections.png)
 
@@ -242,8 +250,9 @@ section has virtual size `0x375`, virtual address `0x5000`, raw size `0x400`,
 and **Characteristics `0xE0000020`**. This value decodes to the bitwise OR
 of four PE section flags: `IMAGE_SCN_CNT_CODE (0x00000020)`,
 `IMAGE_SCN_MEM_EXECUTE (0x20000000)`, `IMAGE_SCN_MEM_READ (0x40000000)`, and
-`IMAGE_SCN_MEM_WRITE (0x80000000)`. The combination
-`MEM_EXECUTE | MEM_READ | MEM_WRITE` — commonly abbreviated RWX — is
+`IMAGE_SCN_MEM_WRITE (0x80000000)`.* 
+
+The combination `MEM_EXECUTE | MEM_READ | MEM_WRITE` — commonly abbreviated RWX — is
 extraordinarily unusual in legitimate software. Modern compilers and operating
 systems enforce the W^X principle (a page should be writable or executable,
 not both), both through build-time section flags and through runtime enforcement
@@ -251,7 +260,7 @@ via the Data Execution Prevention feature. A PE section flagged as RWX at
 build time bypasses the first layer of this defense and strongly indicates a
 shellcode container: code that must be writable because it modifies itself
 during execution, and executable because it is ultimately control-transferred
-to.*
+to.
 
 The combination of the `.glav` naming, RWX permissions, entry point in the
 trailing section, and minimal `.text` content establishes that `group2.exe`
@@ -270,19 +279,33 @@ for repetitive data (long runs of the same byte), roughly 4–5 for ASCII text,
 5.5–6.5 for x86/x64 machine code, and above 7.5 for compressed or encrypted
 data.
 
-![PE-bear entropy visualization of group2.exe showing section-by-section entropy profile](images/pebear_entropy.png)
+![DIE entropy analysis of group2.exe showing per-section entropy values and overall profile](images/pebear_entropy.png)
 
-*Figure 10: PE-bear's entropy visualization of `group2.exe`. Each bar or color
-band represents the entropy of a region within the file. The `.glav` section
-does not show the saturated high-entropy profile that would indicate a packed
-or encrypted payload — its entropy profile is consistent with a mix of x64
-machine code and embedded ASCII string data. This is a significant finding:
-it rules out the hypothesis that `.glav` contains a further encoded layer
-(RC4-encrypted shellcode, AES-encrypted configuration, etc.) that would have
-to be decrypted at runtime. The shellcode in `.glav` is therefore in its
-final, ready-to-execute form. Any "decoding" the malware appears to perform
-at runtime must be purely mechanical transformations (such as resolving
-Windows API pointers) rather than cryptographic operations.*
+*Figure 10: Detect It Easy's entropy analysis of `group2.exe`.*
+
+Although DIE's heuristic scanner flagged the binary as possibly packed in Figure 7, the
+entropy analyzer reports a final verdict of "not packed (21%)". The two
+subsystems are measuring different things — the heuristic flag is
+**structural** (EP location, section layout, IAT shape), while the entropy
+analysis is **statistical** (byte-value distribution). A genuine packer
+would trigger both signals: structural anomaly plus high entropy (typically
+7.5+ bits/byte) in the section containing the compressed payload. Here, the
+per-section entropies are `.rdata` = 2.87, `.data` = 0.03, `.pdata` = 0.10,
+and `.glav` = 5.76, with overall file entropy of 1.72. The 5.76 value in
+`.glav` is elevated relative to the rest of the file and consistent with a
+local peak of approximately 6.6 visible in the graph, but this falls
+squarely within the range expected for dense hand-written x64 machine code
+(5.5–6.5 bits/byte) and well below the ~7.5 threshold that would indicate
+compression or the ~7.9 threshold that would indicate encryption. The
+reconciliation of the two DIE findings is therefore clear: `group2.exe` has
+the **structure** of a packed binary (entry point in a trailing custom
+section) without the **content** of one (no compressed or encrypted blob
+in that section). This is the structural signature of a shellcode loader
+rather than a true packer — the bytes in `.glav` are ready-to-execute x64
+instructions, not a decompress-then-run stub. The practical implication
+for reverse engineering is confirmed by the Advanced Static Analysis
+section below: the shellcode in `.glav` can be disassembled directly
+without peeling off any encryption or compression wrapper.*
 
 #### Import Address Table
 
@@ -299,13 +322,14 @@ of its functionality.
 
 ![PE-bear imports tab showing a single entry: KERNEL32.dll!VirtualProtect](images/pebear_imports.png)
 
-*Figure 11: The complete Import Address Table of `group2.exe`. There is
-exactly **one** imported function across all DLLs: `KERNEL32.dll!VirtualProtect`.
+*Figure 11: The complete Import Address Table of `group2.exe`.*
+
+There is exactly **one** imported function across all DLLs: `KERNEL32.dll!VirtualProtect`.
 This is extraordinary. A Windows GUI application — which the PE header declares
 this binary to be — typically imports at minimum the window-creation,
 message-pump, and GDI functions from `user32.dll` and `gdi32.dll`, plus dozens
-of utility functions from `kernel32.dll`. A 1-function IAT is not just small;
-it is the smallest possible useful IAT.*
+of utility functions from `kernel32.dll`. A 1-function IAT is not just small,
+it is the smallest possible useful IAT.
 
 The interpretation is clear and follows a well-documented malware technique:
 **the binary does not declare its dependencies statically because it resolves
@@ -324,7 +348,7 @@ an IAT reference to, for example, `InternetConnectA` means the malware evades
 simple signature rules that flag "any binary importing WinINet functions as
 suspicious".
 
-The single import that *is* present, `VirtualProtect`, is consistent with
+The single import that is present, `VirtualProtect`, is consistent with
 this interpretation: a runtime loader needs to make code pages executable
 after writing them, and `VirtualProtect` is the standard Windows API for
 changing memory-protection flags on an allocated region. Since the loader
@@ -343,8 +367,9 @@ that are assembled or decoded at runtime rather than stored as static data.
 
 ![FLOSS static strings output showing section names, PAYLOAD marker, shellcode fragments, wininet, User-Agent, 212.22.1.3, and a 120-character URI](images/floss_strings_1.png)
 
-*Figure 12: FLOSS static strings output — the richer half. Notable extracted
-strings include: the PE section and directory labels (`.text$mn`, `.rdata`,
+*Figure 12: FLOSS static strings output — the richer half.*
+
+Notable extracted strings include: the PE section and directory labels (`.text$mn`, `.rdata`,
 `.idata$5`, `.xdata`, `.idata$2`, `.idata$3`, `.idata$4`, `.idata$6`,
 `.data`, `.pdata`, `.glav`); import table entries (`VirtualProtect`,
 `KERNEL32.dll`); a `PAYLOAD:` literal (likely a marker string embedded in the
@@ -353,7 +378,7 @@ shellcode); short ASCII fragments (`AQAPRH1`, `rPM1`, `JJH1`, `R AQ`,
 `wininet`; a full Mozilla/Chrome HTTP User-Agent
 (`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
 Gecko) Chrome/131.0.0.0 Safari/537.36`); an IPv4 address `212.22.1.3`; and a
-120-character URI-like blob beginning with `/DoSaKUGGHJcVXRRffO9-...`.*
+120-character URI-like blob beginning with `/DoSaKUGGHJcVXRRffO9-...`.
 
 The short ASCII fragments (`AQAPRH1`, `AX^YZAXAYAZH`, `SZAXM1`, etc.) are
 not meaningful text. They are **x64 instruction opcode bytes that happen to
@@ -393,8 +418,9 @@ behavior:
 
 ![FLOSS stack and decoded strings output showing only wininet recovered](images/floss_strings_2.png)
 
-*Figure 13: FLOSS stack strings and decoded strings output. Beyond the static
-strings already shown, FLOSS reports exactly one stack string (`wininet`)
+*Figure 13: FLOSS stack strings and decoded strings output.*
+
+Beyond the static strings already shown, FLOSS reports exactly one stack string (`wininet`)
 and exactly one decoded string (also `wininet`). Stack strings are built up
 byte-by-byte on the stack at runtime — an obfuscation technique where the
 string never exists in the binary as contiguous data. Decoded strings are
@@ -404,7 +430,7 @@ assembles this particular string on the stack at runtime rather than loading
 it from `.rdata`. Everything else — the User-Agent, the IP address, the URI,
 the section names — appears to be present statically. This is exactly what
 we would expect if the shellcode is using the string `wininet` once, to
-invoke `LoadLibraryA`, early in its execution.*
+invoke `LoadLibraryA`, early in its execution.
 
 #### Automated capability extraction
 
@@ -417,13 +443,13 @@ analysis. For `group2.exe`, however, the result was unusual.
 
 ![capa output reporting "no capabilities found" for group2.exe](images/capa_nocaps.png)
 
-*Figure 14: `capa` reports "no capabilities found" for `group2.exe`. This is
-the null result: capa's rule engine did not match any of its thousands of
+*Figure 14: `capa` reports "no capabilities found" for `group2.exe`.*
+
+This is the null result: capa's rule engine did not match any of its thousands of
 capability rules against the binary. The result is not an error — it is a
 direct consequence of the binary's structure. capa's rules rely heavily on
 characteristic IAT imports and standard disassembly patterns. Because the
-malware resolves every API at runtime through Stephen Fewer's hash-based
-lookup rather than through the IAT, there are no conventional import
+malware resolves every API at runtime, there are no conventional import
 references for capa's rules to match on. Paradoxically, capa's failure here
 is itself strong evidence of API hashing: in an ecosystem where 99.9% of
 real-world malware triggers at least a handful of capa rules, a zero-
@@ -441,14 +467,13 @@ open-source utility `osslsigncode` was used to check for any signature.
 
 ![osslsigncode verify output reporting "No signature found" and an invalid PE checksum warning](images/osslsigncode.png)
 
-*Figure 15: `osslsigncode verify group2.exe` reports "No signature found".
+*Figure 15: `osslsigncode verify group2.exe` reports "No signature found".*
+
 The binary is unsigned — expected for a Metasploit-generated sample. The
 additional warning `invalid PE checksum` is interesting: `osslsigncode`
 reports the PE's declared checksum (`0x000098A5`) does not match the value
-it computes from the binary's content (`0x00009A0D`). Standard Microsoft
-Linker output has a correct PE checksum because the linker computes and
-writes it as the final build step. A mismatch indicates that either the
-linker's `/RELEASE` option was not used (in which case no checksum is
+it computes from the binary's content (`0x00009A0D`). A mismatch indicates that either 
+the linker's `/RELEASE` option was not used (in which case no checksum is
 written at all, and the field defaults to zero — but this binary's checksum
 is non-zero), or the binary was post-processed after linking. For a
 Metasploit sample, the second explanation is likely: `msfvenom` takes the
@@ -464,8 +489,8 @@ the Windows-native tools.
 
 ![rabin2 -I, -S, -i, -zz output showing file properties, sections, imports, and strings](images/rabin2_sections.png)
 
-*Figure 16: `rabin2` cross-verification. `rabin2 -I` confirms the PE-level
-properties (machine `AMD64`, subsystem `Windows GUI`, `nx: true`,
+*Figure 16: `rabin2` cross-verification.*
+`rabin2 -I` confirms the PE-level properties (machine `AMD64`, subsystem `Windows GUI`, `nx: true`,
 `signed: false`, `stripped: false`). `rabin2 -S` prints the five-section
 layout, explicitly showing the permission strings: `.text` as `-r-x`,
 `.rdata` as `-r--`, `.data` as `-rw-`, `.pdata` as `-r--`, and `.glav` as
@@ -473,7 +498,7 @@ layout, explicitly showing the permission strings: `.text` as `-r-x`,
 (`KERNEL32.dll / VirtualProtect`). `rabin2 -zz` prints all strings including
 the `!This program cannot be run in DOS mode.` DOS stub message. Every
 finding from the Windows-side tools is corroborated by the Linux-side
-tools, giving high confidence in the Basic Static Analysis conclusions.*
+tools, giving high confidence in the Basic Static Analysis conclusions.
 
 #### Summary of Basic Static Analysis findings
 
@@ -522,8 +547,9 @@ function labeled `FUN_140005191`, immediately after a `call` instruction.
 
 ![Ghidra listing at FUN_140005191 showing argument-preparation instructions and the call FUN_14000522E followed by the inline /DoSaKU... URI](images/ghidra_FUN_140005191.png)
 
-*Figure 17: Ghidra's disassembly of `FUN_140005191`. The function prepares
-arguments for a WinINet call — `mov r8, 0x1f92` sets up a 4-byte immediate
+*Figure 17: Ghidra's disassembly of `FUN_140005191`.*
+
+The function prepares arguments for a WinINet call — `mov r8, 0x1f92` sets up a 4-byte immediate
 (later identified as a port number), `xor r9, r9` clears a register for use
 as a NULL argument, `push rbx` and `push 0x3` place stack arguments for
 the call (service `0x3` = `INTERNET_SERVICE_HTTP`), and `mov r10, 0xc69f8957`
@@ -534,7 +560,7 @@ control to the next function in the stager chain — and the very next byte
 at `0x1400051b5` is `0x2F` (`/`), the first character of the `/DoSaKU…`
 URI, which Ghidra's auto-analyzer correctly leaves as undefined (`??`)
 because the bytes sit in the middle of the code section rather than in a
-data region.*
+data region.
 
 The fact that the ASCII string is placed **immediately after a `call`
 instruction** is the key structural observation. The x86-64 `call`
@@ -548,8 +574,9 @@ requiring a data section or any knowledge of its own load address.
 
 ![Ghidra listing at FUN_14000522E showing the pop rdx consuming the URI pointer and subsequent argument setup](images/ghidra_FUN_14000522E.png)
 
-*Figure 18: Ghidra's disassembly of `FUN_14000522E`. The function begins
-with `mov rcx, rax` (loading the connection handle returned by the previous
+*Figure 18: Ghidra's disassembly of `FUN_14000522E`.*
+
+The function begins with `mov rcx, rax` (loading the connection handle returned by the previous
 `InternetConnectA` call), followed by `push rbx / pop rdx` — a stack
 alignment shuffle — and then `pop r8`, which consumes the return address
 that the preceding `call` pushed onto the stack. Since the address pushed
@@ -615,8 +642,9 @@ convention. radare2 was used to locate this prologue in `group2.exe`.
 
 ![r2 search /x fc4883 returning single hit at 0x140005000 followed by disassembly of block_api prologue](images/r2_prologue_search.png)
 
-*Figure 19: radare2 identifies the shellcode entry point. The command `/x
-fc4883` searches for the byte pattern `fc 48 83` and returns exactly one
+*Figure 19: radare2 identifies the shellcode entry point.*
+
+The command `/x fc4883` searches for the byte pattern `fc 48 83` and returns exactly one
 match, at virtual address `0x140005000`. Seeking to that address and
 disassembling reveals the Stephen Fewer `block_api` resolver prologue in
 full: `cld` (direction-flag clear), `and rsp, 0xfffffffffffffff0` (stack
@@ -631,7 +659,7 @@ list of loaded modules. radare2 labels this function entry as `entry0`,
 `hit9_0` (from our search), and `rip` — all collocated at `0x140005000`,
 confirming that the PE entry point *is* the shellcode entry point with no
 separate PE wrapper. The section banner confirms the section is `.glav` and
-marked `-rwx`.*
+marked `-rwx`.
 
 The instruction sequence from `0x140005000` onward is not merely similar to
 Metasploit's `block_api.asm`; it is **byte-for-byte identical** to the
@@ -656,8 +684,9 @@ x64 encoding of `call rbp` — across the entire binary.
 ![r2 session showing pd -3 at final call sites displaying Sleep, VirtualAlloc, InternetReadFile, ExitProcess hash constants and argument setup](images/r2_hash_args.png)
 
 *Figure 20: radare2 extraction of hash constants and arguments at the final
-four `call rbp` sites in the shellcode. At `0x1400052a2`, the preceding
-instructions `jne 0x1400052b0 / mov rcx, 0x1388 / movabs r10, 0xe035f044`
+four `call rbp` sites in the shellcode.*
+
+At `0x1400052a2`, the preceding instructions `jne 0x1400052b0 / mov rcx, 0x1388 / movabs r10, 0xe035f044`
 identify the call as `Sleep(5000)` — `0x1388` is 5000 in decimal, confirming
 a 5-second sleep. At `0x1400052cc`, the sequence `shl edx, 0x10 / mov r8,
 0x1000 / movabs r10, 0xe553a458` identifies the call as `VirtualAlloc`. The
@@ -667,7 +696,7 @@ a 5-second sleep. At `0x1400052cc`, the sequence `shl edx, 0x10 / mov r8,
 PAGE_EXECUTE_READWRITE)`. At `0x1400052ef`, `mov r8, 0x2000 / mov r9, rdi /
 movabs r10, 0xe2899612` identifies the call as `InternetReadFile` with an
 8 KB (0x2000) chunk size. At `0x140005310`, `push 0 / pop rcx / mov r10,
-0x56a2b5f0` identifies the final call as `ExitProcess(0)`.*
+0x56a2b5f0` identifies the final call as `ExitProcess(0)`.
 
 Combining this extraction with the earlier hashes visible in the Ghidra
 disassembly (Figures 17 and 18) and additional radare2 seeks across the
@@ -750,26 +779,16 @@ to small edits and insertions in the compared files.
 ![msfvenom generating reference.exe followed by ssdeep -d comparing group2.exe against reference.exe, returning similarity score 38](images/msfvenom_ssdeep.png)
 
 *Figure 21: Generation of a vanilla Metasploit reference binary and ssdeep
-similarity comparison. The reference `reference.exe` is 7168 bytes. The
-similarity score between `group2.exe` and `reference.exe` is 38/100.
-Inspecting the two ssdeep hashes side by side reveals common substrings at
-both ends — both hashes begin with `eFGS` and both contain `qqilk` at their
-tails — indicating that large regions of the two binaries are structurally
-equivalent at equivalent offsets. The 38/100 score quantifies the overall
-similarity of the files including their differing PE wrappers; the higher
-local similarity at the start and end of the hash reflects the shared PE
-header conventions and the shared shellcode epilogue.*
+similarity comparison.*
 
-A similarity score of 38 on ssdeep's scale confirms that `group2.exe` shares
-substantial structural content with stock Metasploit output without being an
-exact copy. The remaining differences are attributable to the `msfvenom`
-template used at build time, which varies slightly across Metasploit Framework
-versions, and to any post-compile modifications that may have been applied
-(such as the checksum re-computation observed in Figure 15). The shellcode
-itself, as proven by the byte-exact match of the `block_api` prologue in
-Figure 19 and the ten-for-ten API hash inventory above, is identical in
-behavior and in almost every byte to the upstream Metasploit `block_api.asm`
-+ `block_reverse_https.asm` combination.
+The reference `reference.exe` is 7168 bytes. The similarity score between `group2.exe`
+and `reference.exe` is 38/100. Inspecting the two ssdeep hashes side by side reveals 
+common substrings at both ends — both hashes begin with `eFGS` and both contain `qqilk`
+at their tails — indicating that large regions of the two binaries are structurally
+equivalent at equivalent offsets. The 38/100 score quantifies the overall
+similarity of the files including their differing PE wrappers, the higher
+local similarity at the start and end of the hash reflects the shared PE
+header conventions and the shared shellcode epilogue.
 
 #### Summary of Advanced Static Analysis findings
 
