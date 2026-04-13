@@ -1,7 +1,5 @@
-# project-csec476-group2
-Malware analysis project including static and dynamic analysis of a real-world sample, with detailed findings, reverse engineering, and network behavior investigation.
-
 # Malware Analysis Report - Group 2
+Malware analysis project including static and dynamic analysis of a real-world sample, with detailed findings, reverse engineering, and network behavior investigation.
 
 ## Team Members
 - Konstantin Avetisian – 405006442
@@ -25,20 +23,9 @@ Malware analysis project including static and dynamic analysis of a real-world s
 
 ## Static Analysis
 
-Static analysis examines a malware sample without executing it, extracting
-identifying characteristics, structural properties, and behavioral intent from
-the binary itself. For `group2.exe`, static analysis proved sufficient to
-completely identify the sample, map its command-and-control infrastructure,
-enumerate every Windows API it would invoke at runtime, and attribute the
-sample to a specific offensive-security framework with its exact build-time
-options — all before a single instruction was emulated or executed.
+In static analysis, a malware sample is analyzed without being run, and identifying characteristics, structural properties, and behavioral intent are derived out of the binary. In the case of `group2.exe`, static analysis was enough to fully identify the sample, map its command-and-control infrastructure, generate all Windows API calls that the sample would make at runtime, and assign the sample to a particular offensive-security framework with its specific build-time options, all without a single instruction being emulated or executed.
 
-This section is divided into Basic Static Analysis, which establishes file
-type, structure, and surface-level indicators, and Advanced Static Analysis,
-which reconstructs the malware's runtime behavior through disassembly,
-control-flow analysis, and cross-referencing against known threat-actor
-techniques. All screenshots include the group identifier and a system
-timestamp.
+This part will be split into Basic Static Analysis, which identifies file type, structure, and surface-level indicators, and Advanced Static Analysis, which re-creates the malware runtime behavior by disassembling it, performing control-flow analysis, and cross-referencing with known threat-actor techniques. Each screenshot has the group identifier and a system timestamp.
 
 ### Basic Static Analysis
 
