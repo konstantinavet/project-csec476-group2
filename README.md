@@ -84,33 +84,22 @@ Before we extract out payload, we directly inspect the object `3 0` to understan
 `application/octet-stream` is the MIME type for "arbitrary binary data" —
 PDF is deliberately not committing to whether the payload is an executable, a
 document, or anything else. The `/FlateDecode` filter means the stream bytes
-on disk are zlib-compressed; they must be inflated to recover the original
+on disk are zlib-compressed, they must be inflated to recover the original
 file.*
 
 #### Extracting the payload
 
-With the object identified and its compression understood, extraction was
-straightforward. `pdf-parser.py --object 3 --filter --dump <outpath>` applies
-every declared stream filter in order and writes the resulting bytes to the
-specified file. We wrote the recovered bytes to `group2.exe` in the downloads
-directory of the FLARE-VM analysis system.
+Knowing the object and how it's compressed, dumping it was simple. We used `pdf-parser.py --object 3 --filter --dump <outpath>` which applies all defined streams filter sequentially to write the resulting bytes to the specified file. The recovered bytes were saved to `group2.exe` within the downloads directory of the FLARE VM analysis system.
 
 #### Hashing and identifying the recovered binary
 
-Once the PE was on disk as a standalone file, standard identification
-procedures were applied.
+After the PE was on the disk as ia standalone file, common identification techniques could be employed.
 
 ![PowerShell Get-FileHash computing SHA-256 of the extracted group2.exe](images/pefile_hash.png)
 
 *Figure 5: SHA-256 of the extracted binary*
 
-The hash serves two purposes. First, it is the canonical identifier for the sample —
-every subsequent finding in this report is attributable to this specific
-SHA-256, which any reader can independently verify by recomputing the hash on
-their own copy of the extracted file. Second, the hash can be searched against
-public threat intelligence databases such as VirusTotal, MalwareBazaar, and
-Hybrid Analysis to determine whether the sample has been previously observed
-in the wild.
+The hash serves two uses, first is a canonical identifier of the sample, every subsequent finding in this report is attributable to this specific SHA-256 that the reader can recompute and verify on their own copy of the extracted file. Second, hash can be searched against threat intelligence sources like VirusTotal, MalwareBazaar, and Hybrid Analysis to see if the sample has been seen before in the wild.
 
 The complete metadata for the extracted binary is:
 
@@ -123,15 +112,7 @@ The complete metadata for the extracted binary is:
 | SHA-256   | `89dfbfeda4ec1d4f6d28ab376cc28468f42f98ccc694cd8e9a5033a34c2f7a7b` |
 | ssdeep    | `24:eFGSGj30pFLknehtht6dp506WcNYKan2DOIRwQa/FlGVKbuqiksvckOp:iGb0onehthEdc2GJCO1Qa9QQqilk` |
 
-The binary's small size (under 8 KB) is itself a behavioral indicator. A
-fully-featured malicious application — a banking trojan, ransomware, or
-backdoor — typically spans hundreds of kilobytes to several megabytes once
-its functionality, configuration, and (often) statically-linked dependencies
-are accounted for. A 7.5 KB Windows PE can contain only a small amount of
-actual code. This size is characteristic of a **stager**: a minimal first-
-stage payload whose sole purpose is to download a larger second-stage payload
-from the attacker's infrastructure and execute it in memory. This hypothesis
-is tested and confirmed by the Advanced Static Analysis below.
+The low size of the binary (less than 8KB) also appears to be a behavioural characteristic. A sophisticated malware application like a banking trojan, a piece of ransomware, or a backdoor, when fully implemented (with their necessary functionality and configuration files, along with statically-linked dependencies in most cases), will often range between several hundreds of kilobytes and several megabytes in size. A Windows PE of 7.5KB has a minimal amount of real code it. It is size that would be expected from a **stager**, a light first-stage payload designed solely for the purpose of downloading and executing the second-stage payload from the attackers' servers in memory. The static analysis conducted below helps to prove this.
 
 #### Threat intelligence lookup
 
@@ -140,17 +121,11 @@ is tested and confirmed by the Advanced Static Analysis below.
 *Figure 6: VirusTotal returns no matching results for the extracted SHA-256
 as of the analysis date.* 
 
-The sample has not been previously observed by any
-of the antivirus engines that contribute to VirusTotal, nor by the community
-comment system. This negative result is itself a finding: whatever this
-sample is, it is either genuinely novel or it has been generated fresh specifically 
-for this deliverable and therefore has no prior fingerprint. Either way, we cannot rely
-on external classification and must identify the family through our own analysis.
+The sample has never been seen by any of the AV engines feeding into VirusTotal, nor by the community comment system. This negative detection itself is an interesting result. The nature of this sample either makes it a new find, or a newly generated sample for the sake of this deliverable and therefore it would never have been seen. Either way, we have to do our own classification and not rely on other external results.
 
 #### Binary identification with Detect It Easy
 
-DIE was then applied to the extracted executable to determine compiler, linker,
-architecture, and any high-level indicators such as packers or protectors.
+We then used DIE to get the compiler, linker, architecture, and potentially high-level indicators, such as packers or protectors, from the dumped executable.
 
 ![Detect It Easy on group2.exe reporting PE64 AMD64 GUI, MSVC 19.36.35207, Visual Studio 2022 v17.6, and a packer heuristic](images/die_exe.png)
 
@@ -160,35 +135,17 @@ linked with Microsoft Linker 14.36.35207 (Visual Studio 2022, v17.6). The
 heuristic line `(Heur)Packer: Compressed or packed data [Last section EP]` is
 the most interesting single finding from this step* 
 
-DIE's packer heuristic has flagged that the PE's entry point does not sit in the first section of
-the binary (`.text`) but in the **last** section. Normal MSVC output places executable code in `.text`,
-which is always the first code section. An entry
-point in a trailing section is diagnostic of either a packer (which decompresses
-the original code at runtime and transfers control to it) or a custom loader
-(which prepares the environment and jumps to embedded shellcode). Combined
-with the small file size, the latter interpretation is more likely.
+DIE's packer heuristic reported the entry point to be in the **last** section of the PE rather than in the first section of the file (`.text`). An normal MSVC produced binary has all executable code located in `.text`, which is the first code section, an entry point in a trailing section will most certainly indicate either a packer that uncompresses and then jumps into the original code or a bespoke loader. Given the file's tiny size, a loader is more probable.
 
 #### PE structure analysis
 
-The Portable Executable (PE) structure of the extracted binary was examined
-using two complementary tools: PE-bear for interactive exploration and section-
-level visualization, and CFF Explorer for detailed section-characteristic
-inspection.
+The portable executable structure of the extracted binary was analyzed with two different, but complimentary analysis tools. PE-bear allowed for exploration and inspection of the binary at the section level, while CFF Explorer was used to examine the section detailed characteristics.
 
 ![PE-bear tree view showing DOS Header, NT Headers, Section Headers, and five sections ending with .glav containing the entry point](images/pebear_sections.png)
 
 *Figure 8: PE-bear's tree view of `group2.exe`.*
 
-The section tree shows five sections: `.text`, `.rdata`, `.data`, `.pdata`, and `.glav`. The first four
-are standard outputs of the Microsoft linker for a 64-bit PE (`.text` for
-executable code, `.rdata` for read-only data, `.data` for mutable data, and
-`.pdata` for exception-handling metadata required by the x64 calling
-convention). The fifth, `.glav`, is **non-standard**. The Microsoft linker
-does not emit sections with this name under any default configuration. The
-entry point annotation `EP = 1A00` further confirms that the binary's
-execution begins inside `.glav` — the last-loaded section. This is the
-structural signature of a hand-crafted PE loader with embedded shellcode,
-not a normal compiled application.
+The section tree has 5 sections, named `.text`, `.rdata`, `.data`, `.pdata`, and `.glav`. The first four sections are as expected from the Microsoft linker output for a 64 bit PE. The section named `.glav` is **non-standard**. Normally, this section will not be generated by Microsoft's linker under any default compilation settings. The entry point mark (`EP=1A00`) clearly shows the program starts execution at this location inside `.glav`, which is the last loaded section. This is an clear indicator of a manually assembled PE loader with an embedded shellcode, not a typical compiled program.
 
 ![CFF Explorer section table showing .glav with virtual size 0x375, characteristics 0xE0000020](images/cff_sections.png)
 
@@ -199,110 +156,33 @@ of four PE section flags: `IMAGE_SCN_CNT_CODE (0x00000020)`,
 `IMAGE_SCN_MEM_EXECUTE (0x20000000)`, `IMAGE_SCN_MEM_READ (0x40000000)`, and
 `IMAGE_SCN_MEM_WRITE (0x80000000)`.* 
 
-The combination `MEM_EXECUTE | MEM_READ | MEM_WRITE` — commonly abbreviated RWX — is
-extraordinarily unusual in legitimate software. Modern compilers and operating
-systems enforce the W^X principle (a page should be writable or executable,
-not both), both through build-time section flags and through runtime enforcement
-via the Data Execution Prevention feature. A PE section flagged as RWX at
-build time bypasses the first layer of this defense and strongly indicates a
-shellcode container: code that must be writable because it modifies itself
-during execution, and executable because it is ultimately control-transferred
-to.
+The combinations `MEMEXECUTE | MEMREAD | MEM_WRITE`, or simply RWX, is exceedingly rare to find among normal applications. Compilers ans operating systems enforce the W^X principle, stating a page can either be writable or executable, but not both through the use of section flags in compilation time and Data Execution Prevention at runtime. If a PE section is built with the RWX flag, it bypasses this first layer of security and suggests a shellcode container: code which needs to be writeable, as it will alter itself while executing, and executable, as it is the final place the control is transferred to.
 
-The combination of the `.glav` naming, RWX permissions, entry point in the
-trailing section, and minimal `.text` content establishes that `group2.exe`
-is structurally a loader rather than a conventional application. The
-remaining sections (`.text`, `.rdata`, `.data`, `.pdata`) are present mainly
-to satisfy the Windows loader's expectations of a well-formed PE; the actual
-malicious payload resides in `.glav`.
+Given the combination of the name of the section, `.glav`, the section having RWX permissions, the entry point being located within the trailing section, and the presence of very little content within the `.text` section clearly indicates that `group2.exe` is not a normal program, but a loader. The other sections, `.text`, `.rdata`, `.data`, `.pdata`, have been added purely to make it seem like a fully compliant PE, when the main part of the malicious application is in fact in `.glav`.
 
 #### Entropy analysis
 
-A standard follow-up to identifying an unusual section is to examine the
-entropy of its content. Shannon entropy, measured in bits per byte on a scale
-from 0 to 8, indicates how uniformly distributed the byte values in a region
-are. Entropy values correspond meaningfully to content categories: near-zero
-for repetitive data (long runs of the same byte), roughly 4–5 for ASCII text,
-5.5–6.5 for x86/x64 machine code, and above 7.5 for compressed or encrypted
-data.
+The expected next step after finding something unusual is to check the entropy of its contents. This gives a value from 0-8 (measured in bits per byte) indicating how randomly distributed the byte values are in that region of the file. This value often indicates what kind of data is stored: a value close to 0 means repetitive data (e.g. long runs of the same byte), 4-5 indicates ASCII text, 5.5-6.5 means x86/x64 machine code and anything above 7.5 is likely compressed/encrypted.
 
 ![DIE entropy analysis of group2.exe showing per-section entropy values and overall profile](images/pebear_entropy.png)
 
 *Figure 10: Detect It Easy's entropy analysis of `group2.exe`.*
 
-Although DIE's heuristic scanner flagged the binary as possibly packed in Figure 7, the
-entropy analyzer reports a final verdict of "not packed (21%)". The two
-subsystems are measuring different things — the heuristic flag is
-**structural** (EP location, section layout, IAT shape), while the entropy
-analysis is **statistical** (byte-value distribution). A genuine packer
-would trigger both signals: structural anomaly plus high entropy (typically
-7.5+ bits/byte) in the section containing the compressed payload. Here, the
-per-section entropies are `.rdata` = 2.87, `.data` = 0.03, `.pdata` = 0.10,
-and `.glav` = 5.76, with overall file entropy of 1.72. The 5.76 value in
-`.glav` is elevated relative to the rest of the file and consistent with a
-local peak of approximately 6.6 visible in the graph, but this falls
-squarely within the range expected for dense hand-written x64 machine code
-(5.5–6.5 bits/byte) and well below the ~7.5 threshold that would indicate
-compression or the ~7.9 threshold that would indicate encryption. The
-reconciliation of the two DIE findings is therefore clear: `group2.exe` has
-the **structure** of a packed binary (entry point in a trailing custom
-section) without the **content** of one (no compressed or encrypted blob
-in that section). This is the structural signature of a shellcode loader
-rather than a true packer — the bytes in `.glav` are ready-to-execute x64
-instructions, not a decompress-then-run stub. The practical implication
-for reverse engineering is confirmed by the Advanced Static Analysis
-section below: the shellcode in `.glav` can be disassembled directly
-without peeling off any encryption or compression wrapper.
+While the heuristic scanner in DIE flags the binary as "probably packed" (Figure 7), the entropy analyzer says "not packed (21%)" at the end. As seen from the two analyses, the two subsystems are looking at two different things. The heuristic analysis looks for **structural** clues that a packer may be used (location of the EP, arrangement of the sections, format of the IAT). The entropy analysis, on the other hand, looks for **statistical** clues (distribution of the bytes values). A "packed" file must display both features: it must show a structural anomaly, and the section containing the compressed data must have an entropy that suggests its content is not regular machine code (e.g., entropy of 7.5 bits/byte or higher). In this case, section entropies are: 2.87 bits/byte (`.rdata`), 0.03 (`.data`), 0.10 (`.pdata`) and 5.76 (`.glav`). Overall file entropy is 1.72 bits/byte. The entropy 5.76 bits/byte in section `.glav` is indeed higher than that in other sections. It correlates with the local maximum seen in the entropy plot around this section, showing a peak of about 6.6 bits/byte. However, this peak is well within the expected entropy for tightly hand-written x64 machine code (which can be in the range 5.5-6.5 bits/byte), and very far from the threshold that would suggest encryption (about 7.9 bits/byte) or compression (about 7.5 bits/byte). In summary, the reason for two different results from the tools is: this binary shows the **structure** of a packed file (EP located inside a trailing custom section), but not the **content**. It is the signature of a shellcode loader. Machine code in `.glav` is intended for direct execution in x64, not for unzipping before being executed. As confirmed below in the "Advanced Static Analysis" section, this implies we will be able to disassemble this section directly without having to peel off any encryption or compression wrapper.
 
 #### Import Address Table
 
-The Import Address Table (IAT) of a PE is the list of external DLL functions
-the binary declares it will need at load time. The Windows loader resolves
-each entry in the IAT to a function pointer before handing control to the
-program's entry point. For a static analyst, the IAT is normally one of the
-richest sources of behavioral information: an application that imports
-`CreateFileA`, `WriteFile`, and `CloseHandle` is obviously doing file I/O;
-one that imports `InternetOpenUrlA` and `HttpSendRequestA` is doing HTTP;
-one that imports `CryptAcquireContextA`, `CryptHashData`, and `CryptEncrypt`
-is doing cryptography. A binary's IAT is often a complete table of contents
-of its functionality.
+PE file's Import Address Table (IAT) is the list of externall DLL functions that the binary declares that it will need to import at load time. Once loaded, the Windows loader binds each entry in the IAT to a function pointer before control is passed to the entry point of the program. Usually the IAT is one of the most useful sources of information to a static analyst: an application that imports `CreateFileA`, `WriteFile`, and `CloseHandle` clearly performs file I/O, an application that imports `InternetOpenUrlA` and `HttpSendRequestA` performs HTTP, and an application that imports `CryptAcquireContextA`, `CryptHashData`, and `CryptEncrypt` performs cryptography. Typically, the IAT of a PE provides a good summary of the functions used by the executable.
 
 ![PE-bear imports tab showing a single entry: KERNEL32.dll!VirtualProtect](images/pebear_imports.png)
 
 *Figure 11: The complete Import Address Table of `group2.exe`.*
 
-There is exactly **one** imported function across all DLLs: `KERNEL32.dll!VirtualProtect`.
-This is extraordinary. A Windows GUI application — which the PE header declares
-this binary to be — typically imports at minimum the window-creation,
-message-pump, and GDI functions from `user32.dll` and `gdi32.dll`, plus dozens
-of utility functions from `kernel32.dll`. A 1-function IAT is not just small,
-it is the smallest possible useful IAT.
+Interestingly, there is only **one** function imported among all DLLs: `KERNEL32.dll!VirtualProtect`. It is extraordinary. A Windows GUI Application (as PE Header tells us that this binary is one) should import at least window-creation, message-pump and GDI functions from `user32.dll` and `gdi32.dll`, and lots of utility functions from `kernel32.dll`. A 1-function IAT is not only small, but also the smallest possible useful IAT.
 
-The interpretation is clear and follows a well-documented malware technique:
-**the binary does not declare its dependencies statically because it resolves
-them dynamically at runtime**. Rather than letting the Windows loader
-populate pointers to WinINet, kernel, and network functions into the IAT, the
-malware performs its own resolution by walking the Process Environment Block
-(PEB) at runtime, enumerating loaded modules, hashing exported function
-names with a lightweight hash function, and comparing the result against
-pre-computed hash constants baked into the shellcode. This technique, known
-as **API hashing**, was popularized in the mid-2000s by security researcher
-Stephen Fewer in his publicly-released `block_api` shellcode. It serves two
-defensive purposes for the attacker. First, the malware's intentions are
-not visible to static analysts who inspect only the IAT — the actual API
-surface is hidden behind opaque 32-bit hash values. Second, the absence of
-an IAT reference to, for example, `InternetConnectA` means the malware evades
-simple signature rules that flag "any binary importing WinINet functions as
-suspicious".
+The interpretation is simple and follows the well-documented malware technique: **the binary does not declare its dependencies in the import table because it looks them up dynamically at runtime**. In other words, instead of relying on the Windows loader to fill in pointers for WinINet, kernel, and networking functions in the IAT, it does the look up on its own. By walking the Process Environment Block (PEB) at runtime and enumerating through loaded modules, it will then hash the exported function name with a very lightweight hashing function and compare that hash value against pre-defined hash constants in the shellcode. This method is called **API hashing**, and was made famous by Stephen Fewer in mid-2000s when he released his public version of `block_api` shellcode. There are two obvious defensive purposes for the attacker. Static analysts looking only at the IAT can't tell what the intentions of the binary are, since the real API call surface lies behind meaningless 32-bit hashes. Also, the absence of an IAT reference to, for example, `InternetConnectA` makes the binary safe from generic detection rules flagging any binary importing functions for WinINet as suspicious.
 
-The single import that is present, `VirtualProtect`, is consistent with
-this interpretation: a runtime loader needs to make code pages executable
-after writing them, and `VirtualProtect` is the standard Windows API for
-changing memory-protection flags on an allocated region. Since the loader
-can obtain a `VirtualProtect` function pointer legitimately through the IAT
-and there is no signature-level suspicion attached to this single function,
-the attacker has bootstrapped the remainder of API resolution from this one
-starting point.
+The only import present, `VirtualProtect`, is in line with this assumption as a runtime loader will need to make the code pages executable after writing them and `VirtualProtect` is the standard Windows API call to set memory-protection flags on an allocated region. Because the loader will be able to gain a valid function pointer to `VirtualProtect` via the IAT and no function signature maliciousity would appear to be tied to this single function the attacker has built out the rest of its API resolution mechanism from this one starting point.
 
 #### Static string extraction
 
