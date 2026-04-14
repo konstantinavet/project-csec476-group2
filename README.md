@@ -123,11 +123,11 @@ as of the analysis date.*
 
 The sample has never been seen by any of the AV engines feeding into VirusTotal, nor by the community comment system. A later Hybrid Analysis submission identified both the executable and the PDF samples as malicious with a high threat score and broad AV detection with multiple mapped ATT&CK techniques. Either way, we have to do our own classification and not rely on other external results.
 
-![HybridAnalysis search returns matching results for the extracted SHA-256 of the PDF file.](images/HybridAnalysis_PDF1.png")
+![HybridAnalysis search returns matching results for the extracted SHA-256 of the PDF file.](images/HybridAnalysis_PDF1.png)
 
 *Figure 7: HybridAnalysis returns matching results for the extracted SHA-256 of the PDF file.* 
 
-![HybridAnalysis search returns matching results for the extracted SHA-256 of the exe file.](images/HybridAnalysis_exe1.png")
+![HybridAnalysis search returns matching results for the extracted SHA-256 of the exe file.](images/HybridAnalysis_exe1.png)
 
 *Figure 8: HybridAnalysis returns matching results for the extracted SHA-256 of the embedded executable file.* 
 
