@@ -23,7 +23,7 @@ Malware analysis project including static and dynamic analysis of a real-world s
 
 ## Static Analysis
 
-In static analysis, a malware sample is analyzed without being run, and identifying characteristics, structural properties, and behavioral intent are derived out of the binary. In the case of `group2.exe`, static analysis was enough to fully identify the sample, map its command-and-control infrastructure, generate all Windows API calls that the sample would make at runtime, and assign the sample to a particular offensive-security framework with its specific build-time options, all without a single instruction being emulated or executed.
+In static analysis, a malware sample is analyzed without being run, and identifying characteristics, structural properties, and behavioral intent are derived out of the binary. In the case of `group2.exe`, static analysis was enough to identify the sample, map its command-and-control infrastructure, generate all Windows API calls that the sample would make at runtime, and assign the sample to a particular offensive-security framework with its specific build-time options, all without a single instruction being emulated or executed.
 
 This part will be split into Basic Static Analysis, which identifies file type, structure, and surface-level indicators, and Advanced Static Analysis, which re-creates the malware runtime behavior by disassembling it, performing control-flow analysis, and cross-referencing with known threat-actor techniques. Each screenshot has the group identifier and a system timestamp.
 
@@ -31,48 +31,22 @@ This part will be split into Basic Static Analysis, which identifies file type, 
 
 #### Initial sample identification
 
-The sample assigned to Group 2 was delivered as a single file named
-`group2.pdf`, totalling 295.04 KiB. PDF is an unusual container for malware
-because the format itself is not executable — a PDF is rendered by a reader
-application (Adobe Reader, Foxit, the built-in Windows viewer, or a browser)
-rather than directly by the operating system. When malware is delivered as a
-PDF, it is almost always for one of three reasons: to exploit a vulnerability
-in the PDF reader itself, to invoke embedded JavaScript that triggers a
-secondary download, or to act as a passive delivery container that holds a
-payload for the user to extract manually. We therefore began by establishing
-the PDF's true file type and surveying it for indicators of which of these
-three categories the sample falls into.
-
-Detect It Easy (DIE) version 3.10, a Windows GUI tool that combines PE
-identification, packer detection, and entropy analysis, was used as the first
-identification step. DIE confirmed the file was a genuine PDF version 1.7
-(the "with binary data" annotation indicates the file contains non-textual
-streams — a strong hint at embedded binary content such as fonts, images, or
-attachments) and reported no packer, obfuscator, or signature-based anomalies
-on the PDF layer itself.
+The sample provided to Group 2 came in a single file: `group2.pdf`, which has a size of 295.04 KiB. PDF is an unconventional malware delivery mechanism since PDF files are not directly executable. They are rendered and displayed using a PDF reader application like Adobe Reader, Foxit, the Windows built-in reader, or web browsers rather than by the operating system itself. When malware is delivered as a PDF, it is almost always for one of three reasons: to exploit a vulnerability in the PDF reader software itself, to execute embedded Javascript that will download a separate piece of malware, or to be a passive delivery container that must be manually unpacked by the user. Accordingly, we started by first identifying the correct file type of the given file and by exploring the file to look for signs of which of the three categories applies to the sample.
+As the first stage of identification, a Windows GUI tool called Detect It Easy (DIE) version 3.10 which integrates PE identification, packer detection and entropy analysis was used. It was determined that the file was a genuine version 1.7 PDF and that it was "with binary data" is an indication that non-textual streams are being used. They could provide binary data within the document (fonts, images or attachments). On the PDF layer no packers, obfuscators or signature-related anomalies were registered.
 
 ![Detect It Easy identifying group2.pdf as PDF 1.7 with binary data](images/pdf_die.png)
 
 *Figure 1: Detect It Easy identifies `group2.pdf` as a legitimate PDF file
 (format `PDF(1.7)[with binary data]`).*
 
-Establishing the true file type before proceeding is standard practice in static analysis 
-because file extensions can be forged, the actual magic bytes at the start of the file (`%PDF-1.7`)
-determine what tools to apply next.
+In static analysis, we always first identify the correct file type before continuing. It is possible that a malicious attacker will "mask" a file with the wrong file extension to trick analysis tools, while the actual magic bytes of the file at the beginning of the file (`%PDF-1.7`) tell which tools we should use in the following stages.
 
 #### Triaging the PDF structure
 
-Didier Stevens' `pdfid.py` is the de-facto standard tool for rapid PDF triage.
-It parses the raw PDF object stream and counts occurrences of every keyword
-commonly abused to trigger malicious behavior — specifically the elements that
-Adobe and third-party PDF readers have historically allowed to invoke code or
-retrieve external resources. The presence of any non-zero count on
-`/JavaScript`, `/JS`, `/OpenAction`, `/AA`, `/Launch`, `/RichMedia`,
-`/JBIG2Decode`, or `/EmbeddedFile` is a flag requiring further investigation.
-the absence of all of them typically indicates a benign PDF.
+The `pdfid.py` utility, developed by Didier Stevens, has become the tool of choice for rapid PDF triage. It reads the raw PDF object stream and counts the occurrences of all keywords commonly used to trigger malware, the parts of the PDF specification that both Adobe and 3rd party PDF readers have historically allowed to execute code or pull from external sources. Non-zero count on `/JavaScript`, `/JS`, `/OpenAction`, `/AA`, `/Launch`, `/RichMedia`,
+`/JBIG2Decode`, or `/EmbeddedFile` suggests the need for further inspection, whereas any PDF without any of the above is generally harmless.
 
-Running `pdfid.py` against `group2.pdf` produced a diagnostic profile that
-narrowed the threat model considerably.
+Executing `pdfid.py` on the `group2.pdf` created a diagnostic profile which significantly reduced the scope of the threat model.
 
 ![pdfid output showing /EmbeddedFile = 1 and all other suspicious keywords at zero](images/pdfid.png)
 
@@ -81,21 +55,13 @@ narrowed the threat model considerably.
 script-execution and auto-action keyword — `/JavaScript`, `/JS`,
 `/OpenAction`, `/AA`, `/Launch` — is zero.*
 
-This tells us the PDF contains no embedded JavaScript, no auto-execution triggers, and no launch actions.
-Its sole function is to carry a single embedded file as an attachment.
+The PDF document seems to not contain any JavaScript that will be executed on load or with user interaction, there is no open action to execute code on open, and there is no launch action which will open a program on load. The only noteworthy anomaly is the presence of a single embedded file, which definitely requires further analysis.
 
 #### Locating the embedded file reference
 
-With a single `/EmbeddedFile` confirmed, the next step was to identify which
-PDF object carries the embedded payload and what filename is associated with
-it. Embedded files in PDF follow a specific object structure. A `/Filespec`
-dictionary describes the file (name, MIME type, relationships), and an `/EF`
-(Embedded File) dictionary inside the Filespec references a separate stream
-object containing the actual file bytes. Identifying the `/Filespec` object
-is therefore the entry point for extraction.
+Now that we have verified the presence of a single `/EmbeddedFile`, we need to determine which PDF object contains the embedded content and what filename is referred to by. The structure of embedded in PDF files follow the certain pattern. Each embedded file is defined by a dictionary, known as the `/Filespec`, which contains the filename, MIME-type and other relationships. The `/Filespec` is then linked via another dictionary (`/EF` or Embedded File) to an individual stream object which contain the bytes of the actual file. Finding this `/Filespec` object would give us the path to the embedded file and so is where we should start.
 
-`pdf-parser.py --search Filespec` walks the object graph and returns every
-`/Filespec` dictionary in the document.
+The command `pdf-parser.py --search Filespec` goes through the graph of objects within the document and returns a list of each `/Filespec` dictionary in the document.
 
 ![pdf-parser --search Filespec showing object 4 references /F (group2.exe)](images/pdfparser_filespec.png)
 
@@ -109,13 +75,7 @@ container of the actual file content.*
 
 #### Inspecting the embedded file object
 
-Before extracting the payload we inspected object `3 0` directly to verify its
-structural properties, in particular what compression or filtering the PDF
-specification applies to the stream. A PDF stream can declare any combination
-of `/Filter` values — common ones are `/FlateDecode` (zlib deflate, the same
-compression used in ZIP), `/ASCIIHexDecode`, `/ASCII85Decode`,
-`/LZWDecode`, and `/Crypt`. To recover the original file we must inverse-apply
-each filter in order.
+Before we extract out payload, we directly inspect the object `3 0` to understand the nature of the structure, specifically, what compression or filters the PDF specification applies to the stream. A PDF stream may be accompanied by any of the combination of `/Filter` values. These commonly occurring values are `/FlateDecode` (zlib deflate which is the compression algorithm used in ZIP), `/ASCIIHexDecode`, `/ASCII85Decode`, `/LZWDecode`, and `/Crypt`. To revert the stream back to the original file, we need to apply these filters in reverse order.
 
 ![pdf-parser --object 3 showing /Type /EmbeddedFile, /Subtype /application/octet-stream, /Filter /FlateDecode](images/pdfparser_object3.png)
 
