@@ -194,26 +194,13 @@ The only import present, `VirtualProtect`, is in line with this assumption as a 
 
 #### Static string extraction
 
-The extracted strings of a binary often reveal hardcoded URLs, filenames,
-error messages, and configuration data. FLOSS (FireEye Labs Obfuscated String
-Solver) was used in addition to the simpler `strings` utility because FLOSS
-applies control-flow analysis to the binary's code and can recover strings
-that are assembled or decoded at runtime rather than stored as static data.
+From a binary, the extracted strings can provide details such as URLs, filenames, error messages and configuration data that are hardcoded in the executable. In addition to the basic `string` utility, FLOSS (FireEye Labs Obfuscated String Solver) was used as control-flow analysis on the executable, which is able to recover strings that are assembled or decoded at runtime instead of being statically defined.
 
 ![FLOSS static strings output showing section names, PAYLOAD marker, shellcode fragments, wininet, User-Agent, 212.22.1.3, and a 120-character URI](images/floss_strings_1.png)
 
 *Figure 14: FLOSS static strings output — the richer half.*
 
-Notable extracted strings include: the PE section and directory labels (`.text$mn`, `.rdata`,
-`.idata$5`, `.xdata`, `.idata$2`, `.idata$3`, `.idata$4`, `.idata$6`,
-`.data`, `.pdata`, `.glav`); import table entries (`VirtualProtect`,
-`KERNEL32.dll`); a `PAYLOAD:` literal (likely a marker string embedded in the
-shellcode); short ASCII fragments (`AQAPRH1`, `rPM1`, `JJH1`, `R AQ`,
-`AX^YZAXAYAZH`, `XAYZH`, `YSZM1`, `SZAXM1`, `PSSI`, `SYj@ZI`); the string
-`wininet`; a full Mozilla/Chrome HTTP User-Agent
-(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
-Gecko) Chrome/131.0.0.0 Safari/537.36`); an IPv4 address `212.22.1.3`; and a
-120-character URI-like blob beginning with `/DoSaKUGGHJcVXRRffO9-...`.
+Prominent extracted strings include: the PE sections and directory labels (`.text$mn`, `.rdata`, `.idata$5`, `.xdata`, `.idata$2`, `.idata$3`, `.idata$4`, `.idata$6`, `.data`, `.pdata`, `.glav`). Some PE import table entries include `VirtualProtect`, `KERNEL32.dll`. It also contains a literal string which is presumably a shellcode marker: `PAYLOAD:`, short ASCII strings such as `AQAPRH1`, `rPM1`, `JJH1`, `R AQ`, `AX^YZAXAYAZH`, `XAYZH`, `YSZM1`, `SZAXM1`, `PSSI`, `SYj@ZI`. Other extracted strings are `wininet`, an entire Mozilla/Chrome HTTP User-Agent string (`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36`), an IP address (`212.22.1.3`) and a long 120-character URI-like blob starting with `/DoSaKUGGHJcVXRRffO9-....`.
 
 The short ASCII fragments (`AQAPRH1`, `AX^YZAXAYAZH`, `SZAXM1`, etc.) are
 not meaningful text. They are **x64 instruction opcode bytes that happen to
