@@ -242,41 +242,17 @@ behavior:
 
 *Figure 15: FLOSS stack strings and decoded strings output.*
 
-Beyond the static strings already shown, FLOSS reports exactly one stack string (`wininet`)
-and exactly one decoded string (also `wininet`). Stack strings are built up
-byte-by-byte on the stack at runtime — an obfuscation technique where the
-string never exists in the binary as contiguous data. Decoded strings are
-those FLOSS has determined are produced by a runtime decoding routine. The
-fact that FLOSS recovered `wininet` from both sources means the binary
-assembles this particular string on the stack at runtime rather than loading
-it from `.rdata`. Everything else — the User-Agent, the IP address, the URI,
-the section names — appears to be present statically. This is exactly what
-we would expect if the shellcode is using the string `wininet` once, to
-invoke `LoadLibraryA`, early in its execution.
+Besides the already listed static strings, FLOSS reported precisely one stack string (`wininet`) and one decoded string (also `wininet`). Stack strings are constructed byte-by-byte at run time and are a form of obfuscation; these strings do not exist as contiguous data anywhere in the binary. Decoded strings are strings FLOSS has determined are the result of a run-time decoding routine. Since FLOSS could only find `wininet` via these two methods, this leads us to believe that the binary construction this string in the stack at run time instead of having it in `.rdata`. All of the remaining data (User-Agent, IP address, URI, section names) seem to be present statically. This is consistent with what we would expect to see if the shellcode used this one string (`wininet`) for its call to `LoadLibraryA` very early in its execution.
 
 #### Automated capability extraction
 
-Mandiant's `capa` tool automates the detection of malware capabilities by
-matching a library of thousands of rules against a binary's disassembly,
-imports, and strings. It produces output in natural language ("resolves
-function by hash", "connects to HTTP server", "contains obfuscated stack
-strings", etc.) and is one of the fastest ways to sanity-check a manual
-analysis. For `group2.exe`, however, the result was unusual.
+Mandiant's `capa` tool automatically identifies malware capabilities by matching against a library of many thousands of rules when fed the binary's disassembly, imports, and strings. The results are described in natural language (e.g., "resolves function by hash", "connects to http server", "contains obfuscated stack strings") and this is among the fastest methods for sanity-checking a manual analysis. However, for `group2.exe` it gave an unusual result:
 
 ![capa output reporting "no capabilities found" for group2.exe](images/capa_nocaps.png)
 
 *Figure 16: `capa` reports "no capabilities found" for `group2.exe`.*
 
-This is the null result: capa's rule engine did not match any of its thousands of
-capability rules against the binary. The result is not an error — it is a
-direct consequence of the binary's structure. capa's rules rely heavily on
-characteristic IAT imports and standard disassembly patterns. Because the
-malware resolves every API at runtime, there are no conventional import
-references for capa's rules to match on. Paradoxically, capa's failure here
-is itself strong evidence of API hashing: in an ecosystem where 99.9% of
-real-world malware triggers at least a handful of capa rules, a zero-
-capability result is diagnostic of advanced evasion and points the analyst
-toward the manual techniques used in the Advanced Static Analysis section.
+This is the null result, none of capa's thousands of capability rules matched against the binary. This is not an error, rather, this is the expected outcome given the binary. Capa relies very heavily on characteristic IAT imports, as well as typical assembly sequences to detect specific functionality, and this binary actually dynamically resolves each API at runtime, meaning there are no traditional import references for capa rules to look for. Paradoxically, capa's failure to detect anything is the evidence of API hashing, and considering that 99.9% of actual malware will have at least a couple of capa rules match, a zero capability signature is the perfect evidence for something advanced, and leads us to the manual techniques described in the Advanced Static Analysis section.
 
 #### Authenticode signature check
 
