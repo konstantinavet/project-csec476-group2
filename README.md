@@ -647,6 +647,13 @@ The process also writes multiple values under HKCU\Software\Microsoft\Windows\Cu
 
 *Figure 33: Registry changes recorded after execution of group2.exe.*
 
+#### Live post-exploitation interaction
+
+After the reverse HTTPS callback completed and the 204,892-byte second stage was delivered, interaction with the opened Meterpreter session confirmed that the downloaded stage was functional and executing on the victim host. Session listing and interaction confirmed an active meterpreter x64/windows session associated with the victim system. The sysinfo output identified the host as CSEC202, running Windows 10 x64, while getuid showed execution under the user CSEC202\UserCSEC202. Process listing further confirmed that the active payload was running from C:\Users\UserCSEC202\Downloads\group2.exe. Together, these outputs show that the staged payload was not only delivered successfully but also established a usable foothold on the target.
+
+![Live post-exploitation interaction.](images/meterpreter_commands.png)  
+
+*Figure 34: Live post-exploitation interaction through meterpreter*
 
 ### Advanced Dynamic Analysis
 - Debugging
