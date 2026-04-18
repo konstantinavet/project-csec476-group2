@@ -610,7 +610,7 @@ Collectively, the advanced-dynamic findings are a conclusive corroboration of th
 
 - Remote access ability: The malware achieved its objective in staging and launching a Meterpreter session, therefore fully demonstrating remote access capability. Although a direct capture of user files and user credentials was not taken, the Meterpreter session being opened does reflect that the compromised machine was available remotely for reconnaissance, file access, credential harvesting, and ultimately exfiltration.
 
-#### Indicators of compromise (IOCs):
+### Indicators of compromise (IOCs):
 
 PDF SHA-256: 3ce840cc49a1beef743274dc7fe29d2ff9aa17e00afcd3a386e908dca3539133
 
@@ -634,6 +634,51 @@ Custom PE section: .glav
 
 Runtime-loaded modules: wininet.dll, WS2_32.dll, schannel.dll, urlmon.dll, winhttp.dll, bcryptPrimitives.dll
 
+### MITRE ATT&CK MAPPING
+
+#### Initial Access (TA0001)
+
+| Technique ID | Technique     | Procedure and Evidence From Report |
+|--------------|---------------|------------------------------------|
+| T1566.001 | Phishing: Spearphishing Attachment | The initial delivery vector is a PDF file (`group2.pdf`) that contains a malicious embedded executable. The user must open the PDF and extract/execute the attachment. |
+
+#### Execution (TA0002)
+
+| Technique ID | Technique     | Procedure and Evidence From Report |
+|--------------|---------------|------------------------------------|
+| T1204.002 | User Execution: Malicious File | The PDF itself does not auto-execute the malware. The user is socially engineered into extracting and manually executing the embedded `group2.exe` file. |
+| T1059.003 | Command and Scripting Interpreter: Windows Command Shell | The stager executes shellcode and dynamically resolves APIs, ultimately leading to the execution of a Meterpreter payload in memory. |
+
+#### Defense Evasion (TA0005)
+
+| Technique ID | Technique     | Procedure and Evidence From Report |
+|--------------|---------------|------------------------------------|
+| T1027.009 | Obfuscated Files or Info: Embedded Payloads | The `group2.exe` payload is embedded as a `/EmbeddedFile` object within the PDF container. |
+| T1027.002 | Obfuscated Files or Info: Software Packing | The PE has a custom RWX section (`.glav`) and an entry point in the last section, indicating a packed or custom loader structure. |
+| T1140 | Deobfuscate/Decode Files or Information | The shellcode uses the CALL/POP technique to locate an inline URI string from the code section rather than the data section. |
+| T1027.007 | Obfuscated Files or Info: Dynamic API Resolution | The binary's Import Address Table (IAT) contains only `VirtualProtect`. All other APIs (`InternetConnectA`, `LoadLibraryA`) are resolved at runtime using a custom ROR13 hashing algorithm (`block_api`). |
+| T1036.005 | Masquerading: Match Legitimate Name or Location | The malware uses a legitimate-looking User-Agent string (Chrome on Windows 10) for its C2 communication. |
+| T1112 | Modify Registry | The process modifies registry keys under `HKCU\...\Internet Settings\ZoneMap` (`ProxyBypass`, `AutoDetect`), likely to influence the environment for web traffic. |
+| T1497.001 | Virtualization/Sandbox Evasion: System Checks | The executable queries registry keys for `SafeBoot`, `ProcessMitigationPolicy`, kernel debugger status, and system version to potentially detect analysis environments. |
+
+#### Discovery (TA0007)
+
+| Technique ID | Technique     | Procedure and Evidence From Report |
+|--------------|---------------|------------------------------------|
+| T1082 | System Information Discovery | The malware queries the system for OS version, product type, computer name, and locale settings. |
+| T1012 | Query Registry | The process opens and queries numerous registry keys related to Session Manager, SafeBoot, AppCompat flags, Internet Settings, and Winsock configuration. |
+| T1033 | System Owner/User Discovery | The live Meterpreter session used the `getuid` command, confirming the ability to discover the current user context. |
+
+#### Command and Control (TA0011)
+
+| Technique ID | Technique     | Procedure and Evidence From Report |
+|--------------|---------------|------------------------------------|
+| T1071.001 | Application Layer Protocol: Web Protocols | The malware uses HTTPS for all C2 communication. |
+| T1573.001 | Encrypted Channel: Symmetric Cryptography | The C2 channel is encrypted via TLS 1.2. The malware disables certificate validation (`InternetSetOptionA` with option 31) to accept the listener's self-signed certificate. |
+| T1573.002 | Encrypted Channel: Asymmetric Cryptography | The TLS handshake with the C2 server uses asymmetric cryptography for key exchange. |
+| T1102 | Web Service | The malware connects to a hardcoded IP address (`212.22.1.3:8082`) acting as a C2 server, which is a reverse HTTPS Meterpreter listener. |
+| T1016 | System Network Configuration Discovery | The process queries Winsock-related registry keys (`Protocol_Catalog9`, `Namespace_Catalog5`), indicating network environment discovery. |
+
 ---
 
 ## Conclusion
@@ -646,7 +691,7 @@ The main takeaway is that there are actually two tightly related artifacts in th
 ## Team Contributions
 Konstantin Avetisian contributed to the static and dynamic analysis process, evidence collection, screenshot preparation, writing and revising report sections, final formatting and editing of the report, and publishing the completed writeup on GitHub Pages.
 
-Ayush Gowda contributed to the static and dynamic analysis of the sample, validation of findings, and review of technical content included in the report.
+Ayush Gowda contributed to the static and dynamic analysis of the sample, writing and validation of findings, and review and revising of technical content included in the report.
 
 Nikita Astionov contributed to the reverse-engineering and technical interpretation of the malware’s behavior, and assisted with review of the analysis results presented in the report.
 
