@@ -515,6 +515,20 @@ Once the reverse HTTPS callback completed and the 204,892 byte second stage was 
 
 *Figure 34: Live post-exploitation interaction through meterpreter*
 
+#### TLS Handshake and C2 Communication
+
+Wireshark analysis of the TLS handshake showed that the malware’s outbound connection to 212.22.1.3:8082 negotiated TLS 1.2 and progressed through the expected server-side handshake stages, including Server Hello, Certificate, Server Key Exchange, and Server Hello Done. This confirms that the command-and-control endpoint was not merely reachable at the TCP level, but was actively operating as a TLS-enabled listener during execution.
+
+Inspection of the presented X.509 certificate showed that the issuer and subject fields were the same, indicating a self-signed certificate. The certificate contained the identity values C=US, ST=TX, O=Konopelski-Spinka, OU=back.up, CN=konopelski.spinka.co, and emailAddress=back.up@konopelski.spinka.co, with a validity window from 2022-06-03 04:57:30 UTC to 2026-06-02 04:57:30 UTC. These values do not resemble a normal public web-service certificate and instead appear consistent with automatically generated or attacker-controlled TLS infrastructure.
+
+This certificate structure is strongly consistent with Metasploit’s generated self-signed certificate pattern. Rapid7 documents and source discussion show that Metasploit can generate certificate subject fields using Faker-derived values for organization, organizational unit, common name, and email address, and the example pattern described by Rapid7 closely matches the values observed here, especially the unusual OU=back.up field.
+
+Taken together, the TLS behavior observed dynamically supports the earlier static conclusion that the sample functions as a reverse HTTPS stager and is able to communicate with a listener presenting an untrusted self-signed certificate. The certificate metadata should therefore be interpreted primarily as a likely framework-generated artifact, not as reliable attribution evidence about the operator’s identity, language, or nationality. In particular, while the custom PE section name .glav may superficially resemble a Slavic-language term, it is not sufficient to support any confident geographic or linguistic attribution on its own.
+
+![Expanded TLS certificate details for the listener at 212.22.1.3:8082. The certificate is self-signed, with matching issuer and subject fields, and its unusual metadata pattern, especially OU=back.up, is strongly consistent with Metasploit-generated certificate artifacts rather than a legitimate public HTTPS certificate.](images/wireshark_cert.png)  
+
+Figure 35: Expanded TLS certificate details for the listener at 212.22.1.3:8082. The certificate is self-signed, with matching issuer and subject fields, and its unusual metadata pattern, especially OU=back.up, is strongly consistent with Metasploit-generated certificate artifacts rather than a legitimate public HTTPS certificate
+
 ### Advanced Dynamic Analysis
 The advanced dynamic analysis of the sample focused on dynamically verifying the execution of the stager from both a memory and live debugging context. Beyond simply proving that group2.exe was executed it was crucial to demonstrate that group2.exe was loaded in memory, dynamically loaded its networking stack, successfully established live C2 with 212.22.1.3:8082, and utilized the resolver-based path that was discovered during static analysis. This was the envisioned advanced-dynamic workflow that could be implemented for this sample and highlights the utility of acquiring a memory dump and using Volatility to verify active processes and network information and the debugger to verify the hashed API dispatch through the resolver stub.
 
@@ -523,39 +537,39 @@ While the Meterpreter session to the detonation host was still live, a full memo
 
 ![Volatility windows.info output confirming that the captured memory image.](images/vol_info_txt.png)  
 
-*Figure 35: Volatility windows.info output confirming that the captured memory image is valid and readable for forensic analysis.*
+*Figure 36: Volatility windows.info output confirming that the captured memory image is valid and readable for forensic analysis.*
 
 #### Malware process persistence in memory
 Volatility windows.pslist gave a PID of 2644 to the malware and also identified the image as containing the image-taking program, this therefore proves that memory acquisition happened in the live, post-compromise state. This is a good result, as it shows the malware was still resident in memory and didn't vanish before memory acquisition.
 
 ![Volatility windows.info output confirming that the captured memory image.](images/vol_malware_process.png)  
 
-*Figure 36: Volatility windows.pslist output showing group2.exe present in memory at the time of capture.*
+*Figure 37: Volatility windows.pslist output showing group2.exe present in memory at the time of capture.*
 
 #### Runtime-loaded networking and TLS libraries
 Volatlity Windows.dlllist shows that WinInet.dll had been loaded in the context of the malware process. This represents one of the major dynamic-advanced indicators as it reinforces static analysis that this sample likely did not have a traditional import table disclosure of WinInet APIs and instead linked to necessary functions in a dynamic fashion. The in-memory Dlllist provides proof of this fact. Beside WinInet.dll, it shows multiple related dynamic-linked libraries had been loaded in the process of the malware. These libraries included WS2_32.dll, urlmon.dll, schannel.dll, SspiCli.dll, winhttp.dll, and bcryptPrimitives.dll. This information leads one to conclude that it had dynamically linked the Windows networking and cryptography libraries needed to implement and maintain the reverse HTTPS session.
 
 ![Volatility windows.dlllist output for group2.exe, showing runtime-loaded wininet.dll and supporting networking/TLS libraries.](images/vol_dll.png)  
 
-*Figure 37: Volatility windows.dlllist output for group2.exe, showing runtime-loaded wininet.dll and supporting networking/TLS libraries.*
+*Figure 38: Volatility windows.dlllist output for group2.exe, showing runtime-loaded wininet.dll and supporting networking/TLS libraries.*
 
 #### Memory-side confirmation of the live C2 channel
 The best evidence discovered for Volatility networks was from the windows.netscan plugin that displays an ESTABLISHED TCP session which was originating from group2.exe at the local IP address of 212.22.1.50 to 212.22.1.3 on port 8082. This artifact was very useful because it proved a link between the process, the machine, and the destination over the network while within the memory image. This verified, on its own, the same communication path shown through live handler communication and corresponded directly to the C2 variables discovered through the static and dynamic analysis. Instead of being confined to only using the Metasploit listener, the memory forensics confirmed the HTTPS connection out of the malware process was being made when the RAM was captured.
 
 ![Volatility windows.netscan output showing an established connection from group2.exe to 212.22.1.3:8082.](images/vol_netscan.png)  
 
-*Figure 38: Volatility windows.netscan output showing an established connection from group2.exe to 212.22.1.3:8082.*
+*Figure 39: Volatility windows.netscan output showing an established connection from group2.exe to 212.22.1.3:8082.*
 
 #### Process-attributed registry and networking context from handle analysis
 Process analysis: Handle analysis showed yet another process attributed view of runtime behavior. The Volatility windows.handles command gave opened objects that were directly related to group2.exe (contrary to the whole-system registry snapshot comparisons that was too noisy to examine earlier in the investigation). It showed the malware process as possessing keys associated with Internet Settings, Internet Explorer\Main, Internet Explorer\Security, and Internet Settings\ZoneMap, as well as winsock catalog paths like Protocol_Catalog9 and Namespace_Catalog5. This is a significant result because it shows that the process not only had network capabilities, but was examining the configuration objects that govern how Windows behaves when handling internet traffic and sockets. It is evidence consistent with network-aware stagers.
 
 ![Volatility windows.netscan output showing an established connection from group2.exe to 212.22.1.3:8082.](images/vol_netscan.png)  
 
-*Figure 39: Volatility windows.handles output showing group2.exe opening Internet Settings and ZoneMap-related registry objects.*
+*Figure 40: Volatility windows.handles output showing group2.exe opening Internet Settings and ZoneMap-related registry objects.*
 
 ![Volatility windows.handles output showing group2.exe opening Internet Settings and ZoneMap-related registry objects.](images/vol_handles1.png)  
 
-*Figure 40: Volatility windows.handles output showing group2.exe opening Internet Explorer and Winsock-related registry objects.*
+*Figure 41: Volatility windows.handles output showing group2.exe opening Internet Explorer and Winsock-related registry objects.*
 
 ![Volatility windows.handles output showing group2.exe opening Internet Settings and ZoneMap-related registry objects.](images/vol_handles2.png)  
 
@@ -564,29 +578,28 @@ In addition to memory forensics, the sample was also live traced in x64dbg. It w
 
 ![ x64dbg showing execution beginning at 0x140005000 inside the custom .glav section.](images/x64dbg_entry_glav.png)  
 
-*Figure 41: x64dbg showing execution beginning at 0x140005000 inside the custom .glav section.*
+*Figure 42: x64dbg showing execution beginning at 0x140005000 inside the custom .glav section.*
 
 ![x64dbg breakpoint hit at 0x1400050D6, confirming live transfer of execution into the resolver stub.](images/x64dbg_resolver_breakpoint.png)  
 
-*Figure 42: x64dbg breakpoint hit at 0x1400050D6, confirming live transfer of execution into the resolver stub.*
+*Figure 43: x64dbg breakpoint hit at 0x1400050D6, confirming live transfer of execution into the resolver stub.*
 
 #### Live hashed API dispatch: library loading
 An x64dbg breakpoint later on intercepted the execution at a call rbp dispatch site where r10 was 0x0726774C. This value was previously correlated with the hash of LoadLibraryA, therefore providing definitive proof in the live execution of this fact, that the stager dispatches to Windows API calls with hashed names rather than a normal import table. The result of this discovery is highly significant in that it correlates the statically found hashing resolver logic within the disassembly and its live usage within the debugger. The initial call is appropriate for when wininet is loaded during the initial staging execution before an HTTP request is issued outbound.
 
 ![x64dbg stopped at a live call rbp dispatch site with r10 = 0x0726774C, consistent with LoadLibraryA.](images/x64dbg_call_rbp_loadlibrarya.png)  
 
-*Figure 43: x64dbg stopped at a live call rbp dispatch site with r10 = 0x0726774C, consistent with LoadLibraryA.*
+*Figure 44: x64dbg stopped at a live call rbp dispatch site with r10 = 0x0726774C, consistent with LoadLibraryA.*
 
 #### Live hashed API dispatch: outbound connection setup
 The next x64dbg breakpoint yielded an even more compelling piece of information about the path used by the network infrastructure. The breakpoint at 0x1400051AE again breaks on call rbp; however r10 = 0xC69F8957 which we previously know is the hash for InternetConnectA. Simultaneously, r8 = 0x1F92. In decimal form this is 8082. It is one of the most precise pieces of evidence obtained using the advanced-dynamic analysis technique, since it demonstrates a correlation between the API dispatch at runtime, the accurate wininet connection function used, and the explicit C2 port revealed from the static and dynamic analysis phases. From this, it can be confidently said that the resolver-based calling mechanism within the stager is used not for simply calling library functions, but for the explicit building of the outgoing reverse https connection to the listener address.
 
 ![x64dbg stopped at 0x1400051AE during a resolver dispatch where r10 matches InternetConnectA and r8 = 0x1F92 confirms use of port 8082.](images/x64dbg_call_rbp_internetconnecta.png)  
 
-*Figure 44: x64dbg stopped at 0x1400051AE during a resolver dispatch where r10 matches InternetConnectA and r8 = 0x1F92 confirms use of port 8082.*
+*Figure 45: x64dbg stopped at 0x1400051AE during a resolver dispatch where r10 matches InternetConnectA and r8 = 0x1F92 confirms use of port 8082.*
 
 #### Interpretation of advanced dynamic findings
 Collectively, the advanced-dynamic findings are a conclusive corroboration of the interpreted behavior of the sample as a whole. The memory analysis demonstrates group2.exe had live presence within RAM, it had loaded the WinINet network/TLS support libraries, and it owned the created TCP connection established to 212.22.1.3:8082. Handle analysis confirms the process accessed the Internet Settings, ZoneMap, IE security paths, and Winsock config objects. The live debugging additionally confirms program execution begins within the shellcode loaded section (.glav) and then moves to the resolver stub and sends the appropriate hashed API calls for the same library loading and outgoing connection established. These indicate that the sample operates as a resolver based reverse HTTPS stager and that the behaviors demonstrated at run time are in agreement with the deduced Metasploit windows/x64/meterpreter/reverse_https scenario.
-
 
 ## Findings
 - Initial Delivery Vector: The original malicious artifact was group2.pdf, which was a PDF 1.7 document. It contained a single /EmbeddedFile object pointing to the attachment group2.exe. There was no use of JavaScript, /OpenAction, or /Launch abuse and so the PDF was a transport for the executable, not an exploit. PDF SHA-256: 3ce840cc49a1beef743274dc7fe29d2ff9aa17e00afcd3a386e908dca3539133.
