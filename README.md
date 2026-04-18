@@ -676,4 +676,10 @@ After the reverse HTTPS callback completed and the 204,892-byte second stage was
 ---
 
 ## Team Contributions
-- Who did what
+Konstantin Avetisian contributed to the static and dynamic analysis process, evidence collection, screenshot preparation, writing and revising report sections, final formatting and editing of the report, and publishing the completed writeup on GitHub Pages.
+
+Ayush Gowda contributed to the static and dynamic analysis of the sample, validation of findings, and review of technical content included in the report.
+
+Nikita Astionov contributed to the reverse-engineering and technical interpretation of the malware’s behavior, and assisted with review of the analysis results presented in the report.
+
+Youssef Elgayar contributed to the investigation, interpretation of findings, and review of the final written report before submission.
