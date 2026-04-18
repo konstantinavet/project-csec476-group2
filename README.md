@@ -591,6 +591,7 @@ This confirms that the PDF functions as a delivery and social-engineering contai
 Because PDF-only execution did not reproduce the expected callback behavior, the embedded file group2.exe was extracted and detonated separately in an isolated analysis lab. The validated runtime parameters for this sample were command-and-control host 212.22.1.3, TCP port 8082, and payload type windows/x64/meterpreter/reverse_https, with the listener bound to 0.0.0.0:8082.
 
 ![Files created during PDF execution.](images/msf_listener_setup.png)
+
 *Figure 27: Reverse HTTPS handler configured for staged execution on port 8082.*
 
 The listener configuration shows a Metasploit multi/handler prepared for windows/x64/meterpreter/reverse_https, bound to 0.0.0.0, configured with LPORT 8082, ExitOnSession false, and no custom handler certificate. These settings match a staged Meterpreter callback workflow rather than a simple reverse shell.
@@ -598,6 +599,7 @@ The listener configuration shows a Metasploit multi/handler prepared for windows
 Before detonation, passive network capture was started from the Kali side so that the initial callback and stage transfer would be preserved from the very beginning of execution. This step is especially important in staged malware analysis because the most relevant network exchange often occurs within only a few seconds of launch.
 
 ![Files created during PDF execution.](images/tcpdump_listener.png)
+
 *Figure 28: Passive packet capture started before detonation of group2.exe.*
 
 #### Runtime execution and stage delivery
@@ -605,6 +607,7 @@ Before detonation, passive network capture was started from the Kali side so tha
 When group2.exe was executed, it immediately behaved as a first-stage reverse HTTPS stager. The handler received an inbound request from the victim host 212.22.1.50, reported Staging x64 payload (204892 bytes), and then opened a Meterpreter session from 212.22.1.50 back to 212.22.1.3:8082. This is the central runtime proof in the dynamic analysis section because it demonstrates the full delivery chain from stage 1 to stage 2. The original 7.5 KiB executable is therefore not a full standalone implant. Instead, it acts as a stager whose role is to establish the outbound channel, request the next payload component, receive it into memory, and transfer execution to it.
 
 ![Successful reverse HTTPS callback.](images/stage_payload.png)
+
 *Figure 29: Successful reverse HTTPS callback, delivery of the 204,892-byte stage, and creation of the Meterpreter session.*
 
 The numerical details visible in this sequence are also meaningful. The transferred second stage is 204,892 bytes, which is consistent with a reflective Meterpreter DLL rather than ordinary user-facing program logic. The same workflow notes that the TLS handshake completed over port 8082 and that the accepted URI checksum was 139, corresponding to the x64 Meterpreter reverse HTTPS stager pattern.
@@ -613,16 +616,19 @@ The numerical details visible in this sequence are also meaningful. The transfer
 Process monitoring further supports the staged-loader interpretation. Inspection in Process Hacker showed that group2.exe remained active after launch and loaded additional runtime components consistent with staged network communication rather than ordinary standalone program behavior.
 
 ![Runtime module view of group2.exe, including dynamically loaded networking and TLS-related libraries.](images/processhacker_modules.png)
+
 *Figure 30: Runtime module view of group2.exe, including dynamically loaded networking and TLS-related libraries.*
 
 The runtime module view shows that group2.exe loads wininet.dll during execution. This is a significant finding because it aligns with the earlier static analysis, where networking capability was inferred from strings and loader structure rather than from a conventional static import profile. The same process also loads supporting components such as ws2_32.dll, schannel.dll, sspicli.dll, urlmon.dll, and bcrypt-related libraries, all of which are consistent with web-based and TLS-enabled staging behavior. Independent runtime analysis also records LoadLibrary activity for wininet and identifies WININET among the modules loaded by the process. Together, these findings support the conclusion that the sample dynamically loads its networking and supporting runtime components as part of its staging routine.
 
 ![Thread activity observed in group2.exe during live execution.](images/processhacker_threads.png)
+
 *Figure 31: Thread activity observed in group2.exe during live execution.*
 
 The thread view shows that the process remains active with multiple threads after staging begins. In the context of this sample, that is consistent with a handoff from the original stub to downloaded in-memory functionality. One thread is shown starting inside group2.exe+0x5000, which matches the fact that execution begins inside the executable itself before the later stage is retrieved and hosted in memory. The observed multi-threaded runtime state therefore fits the expected behavior of a staged loader rather than a minimal single-path executabl
 
 ![Memory view of group2.exe, showing a large private RWX region during live execution.](images/processhacker_memory.png)
+
 *Figure 32: Memory view of group2.exe, showing a large private RWX region during live execution.*
 
 The memory view provides further support for the staged-loader interpretation. A private memory region of approximately 4,096 kB is shown with RWX protection, which is highly unusual for a benign application of this size and consistent with runtime allocation of executable memory for shellcode or downloaded stage content. In a staged reverse HTTPS workflow, such a region is a plausible location for the in-memory second-stage payload after network delivery. This observation also provides a direct bridge to the later advanced dynamic analysis, where the captured memory image can be examined more closely to validate the contents of this region.
@@ -638,7 +644,8 @@ The same runtime evidence records queries to several Internet Settings and Inter
 The process also writes multiple values under HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap, including ProxyBypass, IntranetName, UNCAsIntranet, and AutoDetect. These writes are significant because they show that the executable does not merely inspect host settings. It actively changes user internet-zone configuration, which is consistent with an effort to shape or simplify the environment through which its web-based staging traffic occurs.
 
 ![Registry changes recorded after execution of group2.exe.](images/hybridanalysis_regkeys) 
-Figure 33: Registry changes recorded after execution of group2.exe.
+
+*Figure 33: Registry changes recorded after execution of group2.exe.*
 
 
 ### Advanced Dynamic Analysis
