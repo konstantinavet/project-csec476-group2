@@ -1,4 +1,4 @@
-<img width="485" height="311" alt="vol_info_txt" src="https://github.com/user-attachments/assets/b41ff7ae-02a8-4cb3-ae39-cdcf97264afe" /># Malware Analysis Report - Group 2
+# Malware Analysis Report - Group 2
 Malware analysis project including static and dynamic analysis of a real-world sample, with detailed findings, reverse engineering, and network behavior investigation.
 
 ## Team Members
