@@ -643,7 +643,7 @@ The same runtime evidence records queries to several Internet Settings and Inter
 
 The process also writes multiple values under HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap, including ProxyBypass, IntranetName, UNCAsIntranet, and AutoDetect. These writes are significant because they show that the executable does not merely inspect host settings. It actively changes user internet-zone configuration, which is consistent with an effort to shape or simplify the environment through which its web-based staging traffic occurs.
 
-![Registry changes recorded after execution of group2.exe.](images/hybridanalysis_regkeys) 
+![Registry changes recorded after execution of group2.exe.](images/hybridanalysis_regkeys.png)  
 
 *Figure 33: Registry changes recorded after execution of group2.exe.*
 
