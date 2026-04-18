@@ -308,50 +308,23 @@ The primary static disassembler was Ghidra. We identified the 120 character stri
 
 *Figure 19: Ghidra's disassembly of `FUN_140005191`.*
 
-This function prepares arguments for a call to WinINet. `mov r8, 0x1f92` sets up a 4-byte immediate value which is actually later identified as the port number. R9 is zeroed by `xor r9, r9` clearing a register  for use as a NULL argument, `push rbx` and `push 0x3` place stack arguments for the call (service `0x3` = `INTERNET_SERVICE_HTTP`), and `mov r10, 0xc69f8957` loads a 32-bit constant that will turn out to be the ROR13 hash of `InternetConnectA`. The `call rbp` at `0x1400051ae` dispatches this API call. Immediately after, `call FUN_14000522E` at `0x1400051b0` transfers control to the next function in the stager chain, and the very next byte at `0x1400051b5` is `0x2F` (`/`), the first character of the `/DoSaKU…` URI, which Ghidra's auto-analyzer correctly leaves as undefined (`??`) because the bytes sit in the middle of the code section rather than in a data region.
+The argument preparations for a call to WinINet are configured here. `mov r8, 0x1f92` stores a 4-byte immediate that is later revealed to be the port number. `xor r9, r9` zeroes a register that is later used as a NULL argument. `push rbx` and `push 0x3` store stack arguments that will be used in the API call (service `0x3` is `INTERNET_SERVICE_HTTP`) respectively. `mov r10, 0xc69f8957` stores the 32-bit constant that will later be revealed as the ROR13 hash of `InternetConnectA`. `rbp 0x1400051ae` calls this API function. Next, `call FUN_14000522E` at `0x1400051b0` hands control to the next function in the stager chain, and the byte right afterwards at `0x1400051b5` is `0x2f` (`/`), which is the first byte of the `/DoSaKU...` URI and Ghidra automatically annotates it as an unknown (`??`) because the bytes are located inside the code section instead of a data region.
 
-What is structurally interesting is that the ASCII string **follows a `call` instruction directly**. When an `call` instruction in x86-64 executes, it pushes the address of the instruction that follows the call (the return address) onto the stack, and then transfers execution to the callee. If the callee begins with a `pop` of a register from the stack, it receives a pointer to whatever bytes happened to follow the `call`. This is an idiomatic construct called the CALL/POP technique for providing position-independent shellcode with a pointer into its own code space without relying on a data segment, and without having to know its load address.
+What's structurally interesting is that the ASCII string is directly following the `call` instruction. When a `call` instruction in x86-64 is executed, it will first push the return address onto the stack (the address of the instruction following the call) and jump to the callee. When a callee starts with a `pop` of a register of the stack it gets the address of whatever bytes happened to immediately follow the `call`. This technique of calling and immediately following with pop is known as the CALL/POP technique to give position independent shellcode a pointer into its own code space without a data segment, or knowledge of where the code will be loaded.
 
 ![Ghidra listing at FUN_14000522E showing the pop rdx consuming the URI pointer and subsequent argument setup](images/ghidra_FUN_14000522E.png)
 
 *Figure 20: Ghidra's disassembly of `FUN_14000522E`.*
 
-The function begins with `mov rcx, rax` (loading the connection handle returned by the previous
-`InternetConnectA` call), followed by `push rbx / pop rdx` — a stack
-alignment shuffle — and then `pop r8`, which consumes the return address
-that the preceding `call` pushed onto the stack. Since the address pushed
-by `call FUN_14000522E` at `0x1400051b0` was `0x1400051b5` (the first
-character of the inline `/DoSaKU…` URI), `r8` now holds a pointer to that
-URI string. The subsequent `xor r9, r9`, stack pushes, and `mov rax,
-0x84a83200` set up the remaining arguments for the next call — the constant
-`0x84A83200` is a bitmask of WinINet request flags including
-`INTERNET_FLAG_SECURE (0x00800000)`, identifying the request as HTTPS rather
-than plain HTTP.
+The function begins with `mov rcx, rax`, loading the handle of the connection from the previous `InternetConnectA`, following the call, `push rbx / pop rdx` stack alignment, and finally `pop r8` taking out return value from stack where it was stored by previous `call`. This return value is `0x1400051b5` which is beginning of inline /DoSaKU...URI because of the previous `call Fun_14000522E` at `0x1400051b0`. In `r8` we have the address of the URI string. Now, with `xor r9, r9`, push and `mov rax, 0x84a83200`, the other parameters are passed in the next call, where `0x84a83200` is a WinInet request flags bitmask where `InternetFlagSecure (0x00800000)`. The value tells the next call that this is an HTTPS request.
 
-This resolved the mystery of the `/DoSaKU…` string. It is not encoded. It
-is not compressed. It is plaintext ASCII data, stored in the middle of the
-code section rather than in `.rdata`, and accessed via the x86-64 calling
-convention's automatic return-address push. The malware reads the URI out
-of its own instruction stream the first time execution flows past the
-associated `call`.
+This explained the `/DoSaKU...` String. It's not encrypted. It's not compressed. It's just plaintext ASCII data tucked in the middle of the code section instead of in `.rdata`, and retrieved from the x86-64 call convention push of the return-address onto the stack. Malware pulls its own URI out of its own instruction stream the first time through the `call`.
 
 #### The URI checksum — a Metasploit-specific indicator
 
-Having identified the URI as a plaintext argument to a WinINet call, the
-next question is whether the URI itself encodes any meaningful information.
-Brief entropy analysis ruled out the possibility of a base64-encoded payload
-inside the URI — the 5.43 bits-per-character measurement is essentially
-random, and no alphabet permutation produces readable text.
+Since we have successfully recognized the URI as plain text data in the form of an argument to a WinINet function, the final thing we must investigate is if the URI itself holds any specific meaning. We performed a quick entropy calculation and concluded that the URI does not contain a base64 encoded payload, the 5.43 bits-per-character rating is that of truly random data and no permutation of the alphabet makes the encoded data intelligible.
 
-A different line of investigation proved more productive. In Metasploit's
-reverse-HTTP staged payload architecture, the handler distinguishes
-legitimate stager connections from random HTTP traffic by applying a
-checksum to the requested URI. Specifically, the Metasploit framework
-computes `sum(ASCII bytes of URI) mod 256` and compares the result against
-a small table of magic constants. If the checksum matches, the request is
-treated as a stager handshake and the appropriate second-stage payload is
-served in reply. The constants are defined in the Metasploit source file
-`lib/rex/payloads/meterpreter/uri_checksum.rb`:
+Another vector was more successful. In Metasploit's reverse-HTTP staged payload model, Metasploit differentiates valid stager requests from arbitrary HTTP requests by placing a checksum over the requested URI. More precisely, Metasploit calculates `sum(ASCII bytes of URI) mod 256`, and checks if it equals one of the handful of magic constants known. If so, the request is considered a stager handshake, and the correct second-stage payload is served. These constants are kept in `lib/rex/payloads/meterpreter/uri_checksum.rb`:
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -360,87 +333,36 @@ served in reply. The constants are defined in the Metasploit source file
 | `URI_CHECKSUM_INITW` | 92 | 32-bit Windows stager handshake |
 | `URI_CHECKSUM_INITW_X64` | **139** | **64-bit Windows stager handshake** |
 
-Computing the checksum of the recovered URI yields `sum(ord(c) for c in
-"/DoSaKUGGHJcVXRRffO9-ggcg2uPT9Oxuy8xGfQfirY7yO23UxNc4jDSyqGoZ7c040azjJqAMGe4nUjWYYXyEajzPQIC5LT9OUMP4ysU35sPczVGyXNyMZra") % 256 = 139`.
+Computing the checksum of the recovered URI yields `sum(ord(c) for c in "/DoSaKUGGHJcVXRRffO9-ggcg2uPT9Oxuy8xGfQfirY7yO23UxNc4jDSyqGoZ7c040azjJqAMGe4nUjWYYXyEajzPQIC5LT9OUMP4ysU35sPczVGyXNyMZra") % 256 = 139`.
 
-The match to 139 (`0x8B`) is **conclusive** identification of the sample as
-a 64-bit Windows Metasploit stager. The checksum scheme is documented in
-Metasploit's source, ships with every copy of the framework, and would not
-be reproduced by coincidence in non-Metasploit software. From this point
-forward in the analysis we treat attribution as established and use the
-Metasploit upstream source code as an authoritative reference to verify
-subsequent findings.
+A match to 139 (`0x8B`) positively identifies the sample as a Windows 64 bit Metasploit stager. The scheme used for calculating the checksum is documented in the source of Metasploit itself, comes bundled with every installation of the framework, and would not appear coincidentally in anything non-Metasploit. We can now proceed with the analysis knowing for certain where the sample comes from and use the Metasploit upstream source code to confirm our other results.
 
 #### Shellcode entry-point discovery with radare2
 
-Having established the framework identity, we turned to the shellcode itself.
-The Metasploit x64 Windows shellcode blocks all share a canonical entry
-prologue beginning with the byte sequence `fc 48 83 e4 f0` — this decodes to
-`cld; and rsp, 0xfffffffffffffff0`, which clears the direction flag and
-aligns the stack to a 16-byte boundary as required by the x64 calling
-convention. radare2 was used to locate this prologue in `group2.exe`.
+Once we determined the framework identity we focus on the shellcode. Metasploit's x64 Windows shellcode blocks have a canonical entry prologue that always start with the following byte sequence `fc 48 83 e4 f0` which is deciphered as `cld; and rsp, 0xfffffffffffffff0`, that cleans the direction flag and aligns the stack to 16 byte boundaries as stipulated by the x64 calling convention. In the case of `group2.exe` we searched for this prologue in radare2:
 
 ![r2 search /x fc4883 returning single hit at 0x140005000 followed by disassembly of block_api prologue](images/r2_prologue_search.png)
 
 *Figure 21: radare2 identifies the shellcode entry point.*
 
-The command `/x fc4883` searches for the byte pattern `fc 48 83` and returns exactly one
-match, at virtual address `0x140005000`. Seeking to that address and
-disassembling reveals the Stephen Fewer `block_api` resolver prologue in
-full: `cld` (direction-flag clear), `and rsp, 0xfffffffffffffff0` (stack
-align), `call sub.fcn.1400050d6` (transfer into the resolver body), and
-then the characteristic register-saving push sequence
-`push r9 / push r8 / push rdx / xor rdx, rdx / push rcx`. The next instruction
-`mov rdx, gs:[rdx+0x60]` is the canonical x64 PEB access: `gs:[0x60]` is the
-Thread Environment Block offset of the Process Environment Block pointer.
-Subsequent instructions (`mov rdx, [rdx+0x18]` and `mov rdx, [rdx+0x20]`)
-walk `PEB.Ldr` and `Ldr.InMemoryOrderModuleList`, traversing the linked
-list of loaded modules. radare2 labels this function entry as `entry0`,
-`hit9_0` (from our search), and `rip` — all collocated at `0x140005000`,
-confirming that the PE entry point *is* the shellcode entry point with no
-separate PE wrapper. The section banner confirms the section is `.glav` and
-marked `-rwx`.
+Executing the command `/x fc4883` searches for the byte string `fc 48 83` and will return precisely one instance at virtual address `0x140005000`. Following that address, disassembly show the entire Stephen Fewer `block_api` resolver prologue: `cld` (clear direction-flag), `and rsp, 0xfffffffffffffff0` (stack-align), `call sub.fcn.1400050d6` (jump into the body of the resolver) then the usual register-saving push commands: `push r9, push r8, push rdx, xor rdx, rdx, push rcx`. The next instruction `mov rdx, gs:[rdx+0x60]` is the canonical x64PEB access: `gs:[0x60]` is the offset of the Thread Environment Block (TEB) that points to the Process Environment Block (PEB) base. The following two instructions (`mov rdx, [rdx+0x18]` and `mov rdx, [rdx+0x20]`) walk `PEB.Ldr` and `Ldr.InMemoryOrderModuleList`(following the linked list of loaded modules), radare2labels these at `0x140005000`: `entry0`, `hit9_0`(where our search located it) and `rip`. This confirms our previous conclusion: The PE entry-point of the file is actually where our shellcode begins - there is no separate PE wrapper. The section banner indicates that this is part of the `.glav` section and marked `-rwx`).
 
-The instruction sequence from `0x140005000` onward is not merely similar to
-Metasploit's `block_api.asm`; it is **byte-for-byte identical** to the
-upstream source at
-`metasploit-framework/external/source/shellcode/windows/x64/src/block/block_api.asm`.
-Every byte of the prologue, every register choice, every stack operation
-corresponds exactly. This is the structural equivalent of matching a
-fingerprint.
+The sequence of instructions, from `0x140005000` upwards, isn't just like Metasploit's `block_api.asm`, it's byte-for-byte the same as the one at the upstream source: `metasploit-framework/external/source/shellcode/windows/x64/src/block/block_api.asm`. Each byte of the prologue, each register selection and each stack instruction matches. It's the logical equivalent of matching fingerprints.
 
 #### Enumerating all API calls
 
-Every API call through the resolver follows the same structure: the shellcode
-loads the 32-bit ROR13 hash of the target function name into `r10`, places
-other arguments in the platform-standard locations (`rcx`, `rdx`, `r8`, `r9`,
-and the stack), and then `call rbp` to invoke the resolver, which returns
-with the resolved function having been called and its return value in `rax`.
-The resolver's address is held in `rbp` throughout the shellcode's lifetime.
+All API calls through the resolver use the following format: The shellcode load the ROR13 hash for the target function name (as 32 bit hash) in `r10`, place other arguments in the standard argument positions (`rcx`, `rdx`, `r8`, `r9` and on the stack) and `call rbp` in order to jump to the resolver. The resolver will return once the resolved function has been called with its return value stored in `rax`. The address for the resolver will stay in `rbp` for the entire lifetime of the shellcode.
 
-To enumerate every API call, we searched for the byte pattern `ff d5` — the
-x64 encoding of `call rbp` — across the entire binary.
+To enumerate every API call, we searched for the byte pattern `ff d5` — the x64 encoding of `call rbp` — across the entire binary.
 
 ![r2 session showing pd -3 at final call sites displaying Sleep, VirtualAlloc, InternetReadFile, ExitProcess hash constants and argument setup](images/r2_hash_args.png)
 
 *Figure 22: radare2 extraction of hash constants and arguments at the final
 four `call rbp` sites in the shellcode.*
 
-At `0x1400052a2`, the preceding instructions `jne 0x1400052b0 / mov rcx, 0x1388 / movabs r10, 0xe035f044`
-identify the call as `Sleep(5000)` — `0x1388` is 5000 in decimal, confirming
-a 5-second sleep. At `0x1400052cc`, the sequence `shl edx, 0x10 / mov r8,
-0x1000 / movabs r10, 0xe553a458` identifies the call as `VirtualAlloc`. The
-`shl edx, 0x10` is a compact way to produce `0x400000` (4 MiB) from `0x40`
-(which is simultaneously `PAGE_EXECUTE_READWRITE`); `r8 = 0x1000` is
-`MEM_COMMIT`. The net call is `VirtualAlloc(NULL, 0x400000, MEM_COMMIT,
-PAGE_EXECUTE_READWRITE)`. At `0x1400052ef`, `mov r8, 0x2000 / mov r9, rdi /
-movabs r10, 0xe2899612` identifies the call as `InternetReadFile` with an
-8 KB (0x2000) chunk size. At `0x140005310`, `push 0 / pop rcx / mov r10,
-0x56a2b5f0` identifies the final call as `ExitProcess(0)`.
+Using the prior instructions at `0x1400052a2`, the call to `jne 0x1400052b0 / mov rcx, 0x1388 / movabs r10, 0xe035f044` can be found to be `Sleep(5000)`. This is due to `0x1388` being 5000 in decimal, meaning the sleep time is indeed 5 seconds. Using the instructions at `0x1400052cc`, the call to `shl edx, 0x10 / mov r8, 0x1000 / movabs r10, 0xe553a458` can be seen to be `VirtualAlloc`. The `shl edx, 0x10` creates `0x400000` (4 MiB) from `0x40` (which is also `PAGE_EXECUTE_READWRITE`) and `r8=0x1000` is `MEM_COMMIT`, thus it is `VirtualAlloc(NULL, 0x400000, MEM_COMMIT, PAGE_EXECUTE_READWRITE)`. At `0x1400052ef`, `mov r8, 0x2000 / mov r9, rdi / movabs r10, 0xe2899612` identifies the call to `InternetReadFile` with a size of 0x2000 (8 KB). Finally, the `push 0 / pop rcx / mov r10, 0x56a2b5f0` at `0x140005310` can be identified as `ExitProcess(0)`.
 
-Combining this extraction with the earlier hashes visible in the Ghidra
-disassembly (Figures 19 and 20) and additional radare2 seeks across the
-remaining call sites produced the complete API call inventory:
+Combining this extraction with the earlier hashes visible in the Ghidra disassembly (Figures 19 and 20) and additional radare2 seeks across the remaining call sites produced the complete API call inventory:
 
 | # | Call site     | ROR13 hash   | Resolved API          | Purpose                                |
 |---|---------------|--------------|----------------------|----------------------------------------|
@@ -455,109 +377,43 @@ remaining call sites produced the complete API call inventory:
 | 8 | `0x1400052ef` | `0xE2899612` | `InternetReadFile`   | Downloads stage-2 in 8 KB chunks       |
 | 9 | `0x140005310` | `0x56A2B5F0` | `ExitProcess`        | Exit code 0 on failure                 |
 
-Every hash in this table matches the canonical Stephen Fewer ROR13 hash of
-the corresponding Windows API as recorded in Metasploit's framework sources.
-The correspondence is complete and exact: no hash is unaccounted for, no hash
-fails to match, and no extra hashes exist. This is a ten-for-ten match
-against the upstream `block_reverse_https.asm` source.
+All hashes within this table correspond to the canonical Stephen Fewer ROR13 hash for the respective Windows API in the Metasploit framework sources. There is a direct and complete mapping: no hash will be missing, no hash will not map, no hash will be superfluous. A ten for ten against the `block_reverse_https.asm` upstream.
 
 #### Interpretation — complete runtime behavior
 
-Combining the API inventory, the argument values, and the URI checksum result
-yields a complete behavioral description of `group2.exe` without ever
-executing it:
+Putting it all together (the API inventory, the argument values and the URI checksum result) give us a complete behavioral profile of group2.exe, with no actual execution:
 
-1. On launch, the Windows loader maps the PE into memory. The entry point
-   lies at the start of the `.glav` section (`0x140005000`), which is marked
-   RWX. Control transfers there directly.
-2. The first instruction (`cld`) clears the direction flag; the second
-   (`and rsp, -16`) aligns the stack. These are house-keeping operations
-   required before any C-convention call.
-3. A `call` into the API-resolver stub initializes `rbp` to point to the
-   resolver. From this point forward, every WinINet/Kernel32 call is
-   dispatched through `rbp` using the 32-bit ROR13 hash passed in `r10`.
-4. `LoadLibraryA("wininet")` loads the HTTP library into the process.
-5. `InternetOpenA` opens a WinINet session, registering the hardcoded
-   `Mozilla/5.0 ... Chrome/131.0.0.0` User-Agent.
-6. `InternetConnectA` connects to the C2 host `212.22.1.3` using service
-   type `INTERNET_SERVICE_HTTP`. The port is loaded from the immediate
-   `0x01BB` (decimal 8082) in an argument-preparation instruction.
-7. `HttpOpenRequestA` prepares an HTTP GET request with the inline URI as
-   the object name. The request flags (`0x84A83200`) include
-   `INTERNET_FLAG_SECURE`, identifying the connection as HTTPS.
-8. `InternetSetOptionA` is called with option 31
-   (`INTERNET_OPTION_SECURITY_FLAGS`) and value `0x3380`, disabling all
-   certificate validation. This is necessary because the Metasploit C2
-   server's TLS certificate is self-signed.
-9. `HttpSendRequestA` sends the request. On failure, `Sleep(5000)` is called
-   and the send is retried; after ten failures, control falls through to
-   `ExitProcess(0)`.
-10. On successful send, `VirtualAlloc` allocates a 4 MiB RWX buffer to hold
-    the downloaded stage-2 payload.
-11. `InternetReadFile` reads the response body in 8 KB chunks until the
-    response is exhausted, appending each chunk to the RWX buffer.
-12. Control transfers into the start of the downloaded buffer via a
-    `pop rax; ret` idiom, executing the stage-2 payload — which is, by
-    framework design, the Meterpreter reflective DLL.
+1. The PE is mapped into memory by the Windows loader when it is launched. The entry point is at the beginning of the `.glav` section (`0x140005000`, marked RWX) and control is transferred to there immediately.
+2. The two first instructions are `cld` and `and rsp,-16` (both in the standard C call preamble; clearing the direction flag and preparing the stack.).
+3. A `call` into the API-resolver stub initializes `rbp` to point to the resolver itself. From then on, every WinINet and Kernel32 call made throughout the entire execution of group2.exe is dispatched through `rbp` based on the 32-bit ROR13 hash in `r10`.
+4. The `LoadLibraryA("wininet")` function loads the HTTP library.
+5. `InternetOpenA` opens a WinINet session, giving the hardcoded `Mozilla/5.0 ... Chrome/131.0.0.0` User-Agent.
+6. `InternetConnectA` connects to the C2 at `212.22.1.3` using service type `INTERNET_SERVICE_HTTP`. The port is popped from the immediate `0x01BB` (decimal 8082) in an argument-preparation instruction.
+7. `HttpOpenRequestA` prepares an HTTP GET request with the inline URI as the object name. The flags `0x84A83200` specify the connection as HTTPS, using `INTERNET_FLAG_SECURE`.
+8. `InternetSetOptionA` is used with option 31 (`INTERNET_OPTION_SECURITY_FLAGS`) and the value `0x3380`; effectively disabling all validation of certificates, which is necessary since the Metasploit C2server uses a self-signed TLS certificate.
+9. `HttpSendRequestA` attempts to send the request. If it fails it will call `Sleep 5000` then retry, after ten tries it will continue through to `ExitProcess(0)`.
+10. Upon successful transmission `VirtualAlloc` allocates a 4 MiB RWX buffer into which it will download the stage-2 payload.
+11. `InternetReadFile` downloads the returned data stream in 8 KiB chunks until it's depleted, and appends them to the RWX buffer.
+12. Control transfers to the start of the buffer, now containing the stage-2 payload, via a `pop rax; ret` instruction. The stage-2 payload is the Meterpreter reflective DLL by design.
 
-This description — retry policy, buffer sizes, cert-validation bypass, chunk
-size, exit behavior — corresponds line-by-line with Metasploit's published
-`block_reverse_https.asm` source file, confirming both the framework and the
-specific stager variant.
+This description — retry policy, buffer sizes, cert-validation bypass, chunk size, exit behavior — corresponds line-by-line with Metasploit's published `block_reverse_https.asm` source file, confirming both the framework and the specific stager variant.
 
 #### Quantitative similarity against vanilla msfvenom output
 
-To provide one further independent line of evidence, and to narrow down the
-exact msfvenom build options used to produce the sample, a reference binary
-was generated with the inferred parameters: payload
-`windows/x64/meterpreter/reverse_https`, LHOST `212.22.1.3`, LPORT `8082`,
-output format `exe`. This reference was compared against `group2.exe` using
-the ssdeep fuzzy-hashing algorithm, which produces a similarity score from
-0 to 100 based on context-triggered piecewise hashing — a technique robust
-to small edits and insertions in the compared files.
+For one more independent piece of evidence, and to zero in on the specific msfvenom build options used in the sample generation, a reference binary was created using what can be assumed to be the appropriate build parameters; payload `windows/x64/meterpreter/reverse_https`, LHOST `212.22.1.3`, LPORT `8082` and output file format `exe`. The following shows a comparison between this reference binary and `group2.exe` using the ssdeep fuzzy-hashing algorithm. The ssdeep comparison returns a similarity score between 0-100, generated by context-triggered piecewise hashing (a method for comparing files that is resistant to small edits and insertions in the compared data).
 
 ![msfvenom generating reference.exe followed by ssdeep -d comparing group2.exe against reference.exe, returning similarity score 38](images/msfvenom_ssdeep.png)
 
 *Figure 23: Generation of a vanilla Metasploit reference binary and ssdeep
 similarity comparison.*
 
-The reference `reference.exe` is 7168 bytes. The similarity score between `group2.exe`
-and `reference.exe` is 38/100. Inspecting the two ssdeep hashes side by side reveals 
-common substrings at both ends — both hashes begin with `eFGS` and both contain `qqilk`
-at their tails — indicating that large regions of the two binaries are structurally
-equivalent at equivalent offsets. The 38/100 score quantifies the overall
-similarity of the files including their differing PE wrappers, the higher
-local similarity at the start and end of the hash reflects the shared PE
-header conventions and the shared shellcode epilogue.
+The reference: `reference.exe` is 7168 bytes. The two files, `group2.exe` and `reference.exe` have a similarity score of 38/100. Looking at the two ssdeep hashes side-by-side the substrings `eFGS` are common at both ends, and both have the substring `qqilk` at their end, suggesting both files are highly similar structurally at similar offsets. The score of 38/100 is based on the similarity score considering all the PE wrappers that differ between the two binaries. The higher similarity at the ends reflects shared PE header standards and common shellcode prologues.
 
 #### Summary of Advanced Static Analysis findings
 
-`group2.exe` is a Metasploit Framework `windows/x64/meterpreter/reverse_https`
-stager, built with `EXITFUNC=process`, configured to connect back to
-`https://212.22.1.3:8082/DoSaKUGGHJcVXRRffO9-ggcg2uPT9Oxuy8xGfQfirY7yO23UxNc4jDSyqGoZ7c040azjJqAMGe4nUjWYYXyEajzPQIC5LT9OUMP4ysU35sPczVGyXNyMZra`.
-The stager employs three evasion techniques: Stephen Fewer's API-hashing
-resolver (to hide its imports from static inspection), a self-signed TLS
-certificate bypass (so its C2 channel looks like ordinary HTTPS), and a
-URI-checksum handshake (so its initial C2 request is indistinguishable from
-random web traffic to a defender who does not know the checksum scheme).
-On successful connection, the stager downloads a 4 MiB stage-2 payload — by
-framework convention, a reflectively-loaded Meterpreter DLL — and transfers
-control into it. Attribution is supported by the URI checksum result (139 =
-`URI_CHECKSUM_INITW_X64`), the byte-exact match of the shellcode prologue
-to Metasploit's upstream `block_api.asm`, the ten-for-ten match of all API
-ROR13 hashes to Metasploit's canonical hash table, the matching flag
-constants and retry policy, and the ssdeep similarity score of 38 against a
-locally-generated vanilla reference.
+`group2.exe` is a Metasploit Framework `windows/x64/meterpreter/reverse_https` stager; it's built with `EXITFUNC=process` and connects back to `https://212.22.1.3:8082/DoSaKUGGHJcVXRRffO9-ggcg2uPT9Oxuy8xGfQfirY7yO23UxNc4jDSyqGoZ7c040azjJqAMGe4nUjWYYXyEajzPQIC5LT9OUMP4ysU35sPczVGyXNyMZra`. The stager includes three evasion mechanisms: the API-hashing resolver, by Stephen Fewer, so its imports are not static; the self-signed TLS certificate bypass so its C2 channel can pass as normal HTTPS; and a URI-checksum handshake, to make its initial C2 request indistinguishable from random web-browsing to anyone unaware of the handshake. Upon a successful connection it then downloads and transfers execution into a stage-2 payload of 4MiB, which in the framework convention is a reflectively-loaded Meterpreter DLL. Support for attribution is through the URI checksum result (139 = `URICHECKSUMINITWX64`), a byte-exact match of its shellcode prologue with Metasploit's upstream `block_api.asm`, and a ten-out-of-ten match of its ROR13 hashes of every API with Metasploit's hash table. It shares flag constants, and retry policies and has an ssdeep similarity of 38 to locally generated, vanilla reference (4MB stage).
 
-**Tools used in Advanced Static Analysis:** Ghidra (disassembly and
-cross-reference navigation), radare2 (`-AAA` auto-analysis, `/x` byte-pattern
-search, `pd` disassembly, `s` seek), Python (URI checksum computation),
-`msfvenom` (reference binary generation), `ssdeep` (fuzzy-hash similarity
-comparison), the Rapid7 Metasploit Framework source code
-(`external/source/shellcode/windows/x64/src/block/block_api.asm`,
-`external/source/shellcode/windows/x64/src/block/block_reverse_https.asm`,
-`lib/rex/payloads/meterpreter/uri_checksum.rb` — used as authoritative
-reference for ROR13 hash values, flag constants, and URI checksum constants).
+**Tools used in Advanced Static Analysis:** Ghidra (disassembly and cross-reference navigation), radare2 (`-AAA` auto-analysis, `/x` byte-pattern search, `pd` disassembly, `s` seek), Python (URI checksum computation), `msfvenom` (reference binary generation), `ssdeep` (fuzzy-hash similarity comparison), the Rapid7 Metasploit Framework source code (`external/source/shellcode/windows/x64/src/block/block_api.asm`, `external/source/shellcode/windows/x64/src/block/block_reverse_https.asm`, `lib/rex/payloads/meterpreter/uri_checksum.rb` — used as authoritative reference for ROR13 hash values, flag constants, and URI checksum constants).
 
 ## Dynamic Analysis
 
