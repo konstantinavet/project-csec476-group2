@@ -481,7 +481,7 @@ executing it:
    `Mozilla/5.0 ... Chrome/131.0.0.0` User-Agent.
 6. `InternetConnectA` connects to the C2 host `212.22.1.3` using service
    type `INTERNET_SERVICE_HTTP`. The port is loaded from the immediate
-   `0x01BB` (decimal 443) in an argument-preparation instruction.
+   `0x01BB` (decimal 8082) in an argument-preparation instruction.
 7. `HttpOpenRequestA` prepares an HTTP GET request with the inline URI as
    the object name. The request flags (`0x84A83200`) include
    `INTERNET_FLAG_SECURE`, identifying the connection as HTTPS.
@@ -510,7 +510,7 @@ specific stager variant.
 To provide one further independent line of evidence, and to narrow down the
 exact msfvenom build options used to produce the sample, a reference binary
 was generated with the inferred parameters: payload
-`windows/x64/meterpreter/reverse_https`, LHOST `212.22.1.3`, LPORT `443`,
+`windows/x64/meterpreter/reverse_https`, LHOST `212.22.1.3`, LPORT `8082`,
 output format `exe`. This reference was compared against `group2.exe` using
 the ssdeep fuzzy-hashing algorithm, which produces a similarity score from
 0 to 100 based on context-triggered piecewise hashing — a technique robust
@@ -534,7 +534,7 @@ header conventions and the shared shellcode epilogue.
 
 `group2.exe` is a Metasploit Framework `windows/x64/meterpreter/reverse_https`
 stager, built with `EXITFUNC=process`, configured to connect back to
-`https://212.22.1.3:443/DoSaKUGGHJcVXRRffO9-ggcg2uPT9Oxuy8xGfQfirY7yO23UxNc4jDSyqGoZ7c040azjJqAMGe4nUjWYYXyEajzPQIC5LT9OUMP4ysU35sPczVGyXNyMZra`.
+`https://212.22.1.3:8082/DoSaKUGGHJcVXRRffO9-ggcg2uPT9Oxuy8xGfQfirY7yO23UxNc4jDSyqGoZ7c040azjJqAMGe4nUjWYYXyEajzPQIC5LT9OUMP4ysU35sPczVGyXNyMZra`.
 The stager employs three evasion techniques: Stephen Fewer's API-hashing
 resolver (to hide its imports from static inspection), a self-signed TLS
 certificate bypass (so its C2 channel looks like ordinary HTTPS), and a
@@ -561,15 +561,102 @@ reference for ROR13 hash values, flag constants, and URI checksum constants).
 
 ## Dynamic Analysis
 
+Static analysis established that the original delivery artifact, group2.pdf, contains a single embedded executable, group2.exe, while lacking the usual PDF action features commonly associated with automatic execution, such as /JavaScript, /JS, /OpenAction, /AA, or /Launch. Dynamic analysis was therefore divided into two tasks. The first was to determine whether opening the PDF alone would activate the malicious payload. The second was to determine whether the extracted executable would perform the staged reverse HTTPS behavior inferred from the static analysis. This separation is important because the PDF is the user-facing delivery artifact, whereas the embedded PE contains the active malicious logic.
+
 ### Basic Dynamic Analysis
-- Behavior
-- Network traffic
-- Processes
+#### Runtime behavior of the PDF container
+The first runtime step was to open group2.pdf normally in Adobe Reader and observe its behavior. If the embedded executable were automatically launched by the document, the expected artifacts would include suspicious child-process activity, outbound network communication, or other evidence that the embedded payload had been triggered during document open.
+
+When group2.pdf was opened in Adobe Acrobat, the document rendered as a legitimate-looking Conda cheat sheet, indicating that the PDF itself contains benign visible content designed to avoid suspicion. However, inspection of the document interface revealed the presence of an embedded file named group2.exe, which is exposed to the user through the attachments panel.
+
+![PDF opened in Adobe Acrobat showing normal document content.](images/pdf_general.png)
+
+*Figure 24: PDF opened in Adobe Acrobat showing normal document content.*
+
+![Embedded file group2.exe visible inside the PDF.](images/pdf_open.png)
+
+*Figure 25: Embedded file group2.exe visible inside the PDF.*
+
+When attempting to open the embedded executable directly from within the PDF, Adobe Acrobat blocked the action and displayed a security warning stating that the file type is not allowed to be opened due to attachment security restrictions.
+
+![Adobe Acrobat blocking execution of the embedded executable.](images/ref_to_exe_pdf.png)
+
+*Figure 26: Adobe Acrobat blocking execution of the embedded executable.*
+
+This behavior is significant because it shows that the PDF does not automatically execute the embedded payload. Instead, the document relies on exposing the executable to the user while depending on user interaction to trigger execution. The built-in security mechanisms of the PDF reader prevent direct execution of the .exe file, meaning that successful infection would require the user to manually extract and run the embedded file outside of the PDF environment.
+
+This confirms that the PDF functions as a delivery and social-engineering container, rather than as an exploit-based document. The malicious behavior is therefore not triggered during document rendering but only after the embedded executable is executed separately.
+
+#### Lab setup for detonation of the extracted executable
+Because PDF-only execution did not reproduce the expected callback behavior, the embedded file group2.exe was extracted and detonated separately in an isolated analysis lab. The validated runtime parameters for this sample were command-and-control host 212.22.1.3, TCP port 8082, and payload type windows/x64/meterpreter/reverse_https, with the listener bound to 0.0.0.0:8082.
+
+![Files created during PDF execution.](images/msf_listener_setup.png)
+*Figure 27: Reverse HTTPS handler configured for staged execution on port 8082.*
+
+The listener configuration shows a Metasploit multi/handler prepared for windows/x64/meterpreter/reverse_https, bound to 0.0.0.0, configured with LPORT 8082, ExitOnSession false, and no custom handler certificate. These settings match a staged Meterpreter callback workflow rather than a simple reverse shell.
+
+Before detonation, passive network capture was started from the Kali side so that the initial callback and stage transfer would be preserved from the very beginning of execution. This step is especially important in staged malware analysis because the most relevant network exchange often occurs within only a few seconds of launch.
+
+![Files created during PDF execution.](images/tcpdump_listener.png)
+*Figure 28: Passive packet capture started before detonation of group2.exe.*
+
+#### Runtime execution and stage delivery
+
+When group2.exe was executed, it immediately behaved as a first-stage reverse HTTPS stager. The handler received an inbound request from the victim host 212.22.1.50, reported Staging x64 payload (204892 bytes), and then opened a Meterpreter session from 212.22.1.50 back to 212.22.1.3:8082. This is the central runtime proof in the dynamic analysis section because it demonstrates the full delivery chain from stage 1 to stage 2. The original 7.5 KiB executable is therefore not a full standalone implant. Instead, it acts as a stager whose role is to establish the outbound channel, request the next payload component, receive it into memory, and transfer execution to it.
+
+![Successful reverse HTTPS callback.](images/stage_payload.png)
+*Figure 29: Successful reverse HTTPS callback, delivery of the 204,892-byte stage, and creation of the Meterpreter session.*
+
+The numerical details visible in this sequence are also meaningful. The transferred second stage is 204,892 bytes, which is consistent with a reflective Meterpreter DLL rather than ordinary user-facing program logic. The same workflow notes that the TLS handshake completed over port 8082 and that the accepted URI checksum was 139, corresponding to the x64 Meterpreter reverse HTTPS stager pattern.
+
+#### Process behavior of group2.exe
+Process monitoring further supports the staged-loader interpretation. During execution, group2.exe remained active long enough to receive and host the downloaded second stage, rather than terminating immediately after launch. Inspection in Process Hacker showed that the process loaded additional networking and runtime-support modules during execution, which is consistent with a staged malware loader that resolves key functionality at runtime instead of exposing all capabilities through a conventional static import profile.
+
+
+Figure 31: Process Hacker view of group2.exe during execution.
+
+The runtime module view shows that group2.exe loads wininet.dll during execution. This is a significant finding because it aligns with the earlier static analysis, where networking capability was inferred from strings and loader structure rather than from a conventional import pattern. Independent runtime analysis also records LoadLibrary activity for wininet and identifies WININET among the modules loaded by the process, together with supporting modules such as bcryptprimitives.dll and rpcrt4.dll. Taken together, these observations support the conclusion that the sample dynamically loads its networking and supporting runtime components as part of its staging routine.
+
+
+Figure 32: Runtime module view of group2.exe, including dynamically loaded wininet.dll.
+
+The thread view shows that the process remains active with multiple threads after staging begins. In the context of this sample, that is consistent with a handoff from the original stub to downloaded in-memory functionality. The observed multi-threaded runtime state therefore fits the expected behavior of a staged loader rather than a minimal single-path executable.
+
+
+Figure 33: Thread activity observed in group2.exe during live execution.
+
+Additional runtime evidence supports this interpretation. The executable is observed calling InternetOpenA with a Chrome-like user agent string, calling HttpOpenRequestA, dynamically resolving functions through GetProcAddress, and using LoadLibrary to bring in components such as wininet. The same runtime analysis also extracts the command-and-control URL components https://212.22.1.3:8082/ and the long staging URI, and recovers HTTP request strings containing GET /DoSaKUGGHJcVXRRffO9-... HTTP/1.1. These findings fit closely with the live listener evidence and confirm that the executable is using an HTTP-based staging workflow over TLS.
+
+#### Registry behavior of group2.exe
+
+The runtime registry footprint of group2.exe is also consistent with an environment-aware network stager. The process opens and queries keys associated with Session Manager, Segment Heap, SafeBoot, SRP\GP\DLL, SAFER\CodeIdentifiers, filesystem policy, AppCompat flags, Explorer shell folders, desktop language settings, locale configuration, and service or Winsock configuration. These accesses indicate that the executable inspects execution policy, compatibility state, cache paths, language settings, and networking configuration before or during its staging routine.
+
+The same runtime evidence records queries to several Internet Settings and Internet Explorer security values, including DisableCachingOfSSLPages, BypassHttpNoCacheCheck, BypassSslNoCacheCheck, WarnOnHttpsToHttpRedirect, and DisableSecuritySettingsCheck. These checks show specific awareness of how the host handles HTTPS traffic, browser-related security settings, and caching behavior. In addition, the process queries ProcessMitigationPolicy, kernel-debugger information, system version, product type, and active computer name, which supports the view that the stager gathers host context and validates execution conditions before or during second-stage retrieval.
+
+The process also writes multiple values under HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap, including ProxyBypass, IntranetName, UNCAsIntranet, and AutoDetect. These writes are significant because they show that the executable does not merely inspect host settings. It actively changes user internet-zone configuration, which is consistent with an effort to shape or simplify the environment through which its web-based staging traffic occurs.
+
+Figure 28: Registry changes recorded after execution of group2.exe.
+Insert reg_1.png.
+
+Figure 29: Additional registry changes recorded after execution of group2.exe.
+Insert reg_2.png.
+
+Figure 30: Continued registry activity associated with live execution of the staged payload.
+Insert reg_3.png.
+
+Figure 31: Continued registry activity associated with live execution of the staged payload.
+Insert reg_4.png.
+
+Figure 32: Final registry-change summary after detonation of group2.exe.
+Insert reg_5.png.
+
+
 
 ### Advanced Dynamic Analysis
 - Debugging
 - Memory analysis
 - Persistence mechanisms
+
 
 ---
 
