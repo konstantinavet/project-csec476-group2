@@ -599,15 +599,25 @@ Remote access capability: The malware successfully staged and opened a Meterpret
 - Indicators of compromise (IOCs):
 
 PDF SHA-256: 3ce840cc49a1beef743274dc7fe29d2ff9aa17e00afcd3a386e908dca3539133
+
 EXE SHA-256: 89dfbfeda4ec1d4f6d28ab376cc28468f42f98ccc694cd8e9a5033a34c2f7a7b
+
 EXE MD5: 0ce70f0f07c21bf4290a1c0308fc4f46
+
 Embedded filename: group2.exe
+
 C2 host: 212.22.1.3
+
 C2 port: 8082/TCP over HTTPS
+
 Full C2 URL: https://212.22.1.3:8082/DoSaKUGGHJcVXRRffO9-ggcg2uPT9Oxuy8xGfQfirY7yO23UxNc4jDSyqGoZ7c040azjJqAMGe4nUjWYYXyEajzPQIC5LT9OUMP4ysU35sPczVGyXNyMZra
+
 URI checksum: 139 (URI_CHECKSUM_INITW_X64)
+
 User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36
+
 Custom PE section: .glav
+
 Runtime-loaded modules: wininet.dll, WS2_32.dll, schannel.dll, urlmon.dll, winhttp.dll, bcryptPrimitives.dll
 
 ---
