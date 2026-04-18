@@ -573,13 +573,13 @@ When group2.pdf was opened in Adobe Acrobat, the document rendered as a legitima
 
 *Figure 24: PDF opened in Adobe Acrobat showing normal document content.*
 
-![Embedded file group2.exe visible inside the PDF.](images/pdf_open.png)
+![Embedded file group2.exe visible inside the PDF.](images/ref_to_exe_pdf.png)
 
 *Figure 25: Embedded file group2.exe visible inside the PDF.*
 
 When attempting to open the embedded executable directly from within the PDF, Adobe Acrobat blocked the action and displayed a security warning stating that the file type is not allowed to be opened due to attachment security restrictions.
 
-![Adobe Acrobat blocking execution of the embedded executable.](images/ref_to_exe_pdf.png)
+![Adobe Acrobat blocking execution of the embedded executable.](images/file_open.png)
 
 *Figure 26: Adobe Acrobat blocking execution of the embedded executable.*
 
