@@ -528,7 +528,7 @@ A full memory image of the detonation host was acquired with WinPmem while the M
 #### Malware process persistence in memory
 Volatility windows.pslist identified the malware as PID 2644, and the image also showed the memory-acquisition utility itself, confirming that the dump was taken while the system was still in the live post-compromise state. This is an important result because it demonstrates that the malware had not already disappeared from memory before acquisition; instead, it remained active long enough for its runtime state to be examined directly.
 
-![Volatility windows.info output confirming that the captured memory image.](images/vol_malware_processes.png)  
+![Volatility windows.info output confirming that the captured memory image.](images/vol_malware_process.png)  
 
 *Figure 36: Volatility windows.pslist output showing group2.exe present in memory at the time of capture.*
 
